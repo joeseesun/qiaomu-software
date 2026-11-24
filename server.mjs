@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
-import { home, sharePage, terms, errorPage } from './views.mjs';
+import { appsPage, home, sharePage, terms, errorPage } from './views.mjs';
 
 const directory = fileURLToPath(new URL('./public/', import.meta.url));
 const maxImage = 8 * 1024 * 1024;
@@ -92,6 +92,7 @@ export function createSoftwareServer({
   db.exec(`
     PRAGMA journal_mode = WAL;
     PRAGMA secure_delete = FAST;
+    PRAGMA foreign_keys = ON;
     PRAGMA busy_timeout = 3000;
     CREATE TABLE IF NOT EXISTS shares (
       id TEXT PRIMARY KEY, owner_hash TEXT NOT NULL, digest TEXT NOT NULL,
@@ -101,18 +102,80 @@ export function createSoftwareServer({
     );
     CREATE INDEX IF NOT EXISTS gallery_created ON shares(visibility, created DESC);
     CREATE TABLE IF NOT EXISTS reports (id TEXT NOT NULL, reason TEXT NOT NULL, created INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS app_mentions (
+      share_id TEXT NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
+      app_key TEXT NOT NULL,
+      name TEXT NOT NULL,
+      category_key TEXT NOT NULL,
+      category TEXT NOT NULL,
+      PRIMARY KEY(share_id, app_key, category_key)
+    );
+    CREATE INDEX IF NOT EXISTS mentions_by_app ON app_mentions(app_key, category_key, share_id);
+    CREATE INDEX IF NOT EXISTS mentions_by_category ON app_mentions(category_key, app_key, share_id);
+    BEGIN IMMEDIATE;
+    DELETE FROM app_mentions WHERE NOT EXISTS (
+      SELECT 1 FROM shares WHERE id=app_mentions.share_id AND visibility='public'
+    );
+    INSERT OR IGNORE INTO app_mentions
+    SELECT s.id, lower(trim(json_extract(a.value, '$.name'))), json_extract(a.value, '$.name'),
+      lower(trim(json_extract(a.value, '$.group'))), json_extract(a.value, '$.group')
+    FROM shares AS s, json_each(s.apps) AS a WHERE s.visibility='public';
+    COMMIT;
   `);
   const summary = 'id,name,title,visibility,apps,width,height,created';
   const getShare = db.prepare('SELECT ' + summary + ' FROM shares WHERE id=?');
   const getOwner = db.prepare('SELECT owner_hash,digest,visibility FROM shares WHERE id=?');
   const insert = db.prepare('INSERT INTO shares VALUES (?,?,?,?,?,?,?,?,?,?,?,?)');
+  const insertMentions = db.prepare(`
+    INSERT OR IGNORE INTO app_mentions
+    SELECT ?, lower(trim(json_extract(value, '$.name'))), json_extract(value, '$.name'),
+      lower(trim(json_extract(value, '$.group'))), json_extract(value, '$.group')
+    FROM json_each(?)
+  `);
+  const getCategories = db.prepare(`
+    SELECT MIN(m.category) AS name, COUNT(DISTINCT m.app_key) AS count
+    FROM app_mentions AS m JOIN shares AS s ON m.share_id=s.id AND s.visibility='public'
+    GROUP BY m.category_key
+    ORDER BY (m.category_key=lower(?)) DESC, count DESC, m.category_key
+    LIMIT 80
+  `);
+  const getApps = db.prepare(`
+    WITH matches AS (
+      SELECT m.app_key, MIN(m.name) AS name, COUNT(DISTINCT m.share_id) AS count
+      FROM app_mentions AS m JOIN shares AS s ON m.share_id=s.id AND s.visibility='public'
+      WHERE (?='' OR instr(m.app_key, lower(?))>0) AND (?='' OR m.category_key=lower(?))
+      GROUP BY m.app_key ORDER BY count DESC, m.app_key
+      LIMIT ? OFFSET ?
+    )
+    SELECT name, count, (
+      SELECT json_group_array(category) FROM (
+        SELECT MIN(m.category) AS category
+        FROM app_mentions AS m JOIN shares AS s ON m.share_id=s.id AND s.visibility='public'
+        WHERE m.app_key=matches.app_key GROUP BY m.category_key ORDER BY m.category_key
+      )
+    ) AS categories
+    FROM matches ORDER BY count DESC, app_key
+  `);
+  const apps = (q, category, limit, offset = 0) =>
+    getApps.all(q, q, category, category, limit, offset).map(row => ({ ...row, categories: JSON.parse(row.categories) }));
   const deleteShare = db.prepare('DELETE FROM shares WHERE id=? AND owner_hash=?');
   const getImage = db.prepare('SELECT image AS data FROM shares WHERE id=?');
   const getThumb = db.prepare('SELECT thumbnail AS data FROM shares WHERE id=?');
   const getUsage = db.prepare('SELECT COUNT(*) AS count, COALESCE(SUM(length(image)+length(thumbnail)),0) AS bytes FROM shares');
   const report = db.prepare('INSERT INTO reports VALUES (?,?,?)');
   const reportCount = db.prepare('SELECT count(*) AS count FROM reports WHERE id=?');
-  const getGallery = db.prepare('SELECT ' + summary + " FROM shares WHERE visibility='public' AND (?='' OR instr(lower(name),lower(?))>0 OR instr(lower(title),lower(?))>0 OR EXISTS (SELECT 1 FROM json_each(shares.apps) WHERE instr(lower(json_extract(value, '$.name')),lower(?))>0)) ORDER BY created DESC,id DESC LIMIT 25 OFFSET ?");
+  const getGallery = db.prepare(`
+    SELECT ${summary} FROM shares
+    WHERE visibility='public'
+      AND (?='' OR instr(lower(name),lower(?))>0 OR instr(lower(title),lower(?))>0
+        OR EXISTS (SELECT 1 FROM app_mentions AS m WHERE m.share_id=shares.id AND instr(m.app_key,lower(?))>0))
+      AND ((?='' AND ?='') OR EXISTS (
+        SELECT 1 FROM app_mentions AS m WHERE m.share_id=shares.id
+          AND (?='' OR m.app_key=lower(?))
+          AND (?='' OR m.category_key=lower(?))
+      ))
+    ORDER BY created DESC,id DESC LIMIT 25 OFFSET ?
+  `);
   const getSitemap = db.prepare("SELECT id FROM shares WHERE visibility='public' ORDER BY created DESC LIMIT 4000");
   const buckets = new Map();
   let processing = 0;
@@ -160,8 +223,16 @@ export function createSoftwareServer({
       if (replay()) return;
       usage = getUsage.get();
       if (usage.count >= maxShares || usage.bytes + rendered.image.length + rendered.thumbnail.length > maxBytes) throw new RequestError(503, '画廊暂时无法接收新作品。');
-      insert.run(id, ownerHash, digest, data.name, data.title, data.visibility, data.apps,
-        rendered.width, rendered.height, rendered.image, rendered.thumbnail, Date.now());
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        insert.run(id, ownerHash, digest, data.name, data.title, data.visibility, data.apps,
+          rendered.width, rendered.height, rendered.image, rendered.thumbnail, Date.now());
+        if (data.visibility === 'public') insertMentions.run(id, data.apps);
+        db.exec('COMMIT');
+      } catch (error) {
+        db.exec('ROLLBACK');
+        throw error;
+      }
       return json(res, 201, result());
     } finally { processing--; }
   }
@@ -172,15 +243,28 @@ export function createSoftwareServer({
     const method = req.method;
     const read = method === "GET" || method === "HEAD";
     if (read && pathname === '/healthz') return json(res, 200, { ok: db.prepare('SELECT 1 AS ok').get().ok === 1 });
+    const search = (key, max) => Array.from((url.searchParams.get(key) ?? '').normalize('NFC').trim()).slice(0, max).join('');
+    const pageNumber = (max) => Math.min(max, Math.max(1, parseInt(url.searchParams.get('page') ?? '1', 10) || 1));
     if (read && pathname === '/') {
-      const q = (url.searchParams.get('q') ?? '').slice(0, 60).trim();
-      const page = Math.min(167, Math.max(1, parseInt(url.searchParams.get('page') ?? '1', 10) || 1));
-      return html(res, 200, home({ shares: getGallery.all(q, q, q, q, (page - 1) * 24), q, page, origin, umamiId }));
+      const q = search('q', 60);
+      const app = search('app', 60);
+      const category = search('category', 14);
+      const page = pageNumber(167);
+      const shares = getGallery.all(q, q, q, q, app, category, app, app, category, category, (page - 1) * 24);
+      return html(res, 200, home({ shares, q, app, category, page, origin, umamiId, topApps: apps('', '', 6) }));
+    }
+    if (read && pathname === '/apps') {
+      const q = search('q', 60);
+      const category = search('category', 14);
+      const page = pageNumber(8000);
+      const items = apps(q, category, 25, (page - 1) * 24);
+      return html(res, 200, appsPage({ apps: items.slice(0,24), categories: getCategories.all(category), q, category,
+        page, hasNext: items.length > 24 && page < 8000, origin, umamiId }));
     }
     if (read && pathname === '/privacy') return html(res, 200, terms({ origin, umamiId }));
     if (read && pathname === '/robots.txt') return send(res, 200, 'text/plain; charset=utf-8', 'User-agent: *\nDisallow: /api/\nSitemap: ' + origin + '/sitemap.xml\n');
     if (read && pathname === '/sitemap.xml') {
-      const links = ['/', '/privacy', ...getSitemap.all().map(row => '/s/' + row.id)];
+      const links = ['/', '/apps', '/privacy', ...getSitemap.all().map(row => '/s/' + row.id)];
       return send(res, 200, 'application/xml; charset=utf-8', '<?xml version="1.0" encoding="utf-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' +
         links.map(link => '<url><loc>' + origin + link + '</loc></url>').join('') + '</urlset>');
     }
