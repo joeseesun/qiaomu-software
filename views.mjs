@@ -59,8 +59,10 @@ const sizes = { sm: 24, md: 40, lg: 56, xl: 112 };
 function appIcon(app, size = 'md') {
   const px = sizes[size];
   if (app.icon) return `<img class="app-icon app-icon-${size}" src="${iconUrl(esc(app.icon))}" alt="" width="${px}" height="${px}" loading="lazy" decoding="async">`;
-  const letter = Array.from(String(app.name ?? '').trim())[0]?.toUpperCase() ?? '?';
-  return `<span class="app-icon app-icon-${size} app-icon-blank" aria-hidden="true">${esc(letter)}</span>`;
+  const name = String(app.name ?? '').trim();
+  const letter = Array.from(name)[0]?.toUpperCase() ?? '?';
+  const tile = Array.from(name.toLowerCase()).reduce((sum, character) => sum + character.codePointAt(0), 0) % 8;
+  return `<span class="app-icon app-icon-${size} app-icon-blank tile-${tile}" aria-hidden="true">${esc(letter)}</span>`;
 }
 const quoted = (note) => note ? `「${esc(note)}」` : '';
 

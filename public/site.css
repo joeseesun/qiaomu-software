@@ -105,12 +105,23 @@ input[type="search"]::-webkit-search-decoration { -webkit-appearance: none; }
 .app-icon-sm { width: 24px; height: 24px; }
 .app-icon-md { width: 40px; height: 40px; }
 .app-icon-lg { width: 56px; height: 56px; }
-.app-icon-xl { width: 112px; height: 112px; }
-.app-icon-blank { display: grid; place-items: center; border-radius: 22%; background: var(--surface-3); color: var(--text-2); font-weight: 600; box-shadow: inset 0 0 0 1px var(--line-strong); }
-.app-icon-sm.app-icon-blank { font-size: .72rem; }
-.app-icon-md.app-icon-blank { font-size: 1rem; }
-.app-icon-lg.app-icon-blank { font-size: 1.35rem; }
-.app-icon-xl.app-icon-blank { font-size: 2.6rem; }
+/* Icons are stored at 128px, so the largest size stays at 64px to remain sharp on 2x screens. */
+.app-icon-xl { width: 64px; height: 64px; }
+/* Placeholder tiles follow the macOS icon grid: the artwork fills ~82% of the frame, so the tile is inset to match real icons. */
+.app-icon-blank { position: relative; isolation: isolate; display: grid; place-items: center; color: rgb(255 255 255 / .94); font-weight: 600; line-height: 1; text-shadow: 0 1px 1px rgb(0 0 0 / .25); }
+.app-icon-blank::before { content: ""; position: absolute; inset: 9%; z-index: -1; border-radius: 23%; background: linear-gradient(160deg, var(--tile-a), var(--tile-b)); box-shadow: inset 0 1px 0 rgb(255 255 255 / .22), inset 0 0 0 1px rgb(255 255 255 / .08), 0 1px 2px rgb(0 0 0 / .45); }
+.app-icon-sm.app-icon-blank { font-size: .62rem; }
+.app-icon-md.app-icon-blank { font-size: .95rem; }
+.app-icon-lg.app-icon-blank { font-size: 1.3rem; }
+.app-icon-xl.app-icon-blank { font-size: 1.5rem; }
+.tile-0 { --tile-a: #6f86b8; --tile-b: #3d4f7a; }
+.tile-1 { --tile-a: #6fa89a; --tile-b: #36675c; }
+.tile-2 { --tile-a: #b48a5e; --tile-b: #74532f; }
+.tile-3 { --tile-a: #a77aa8; --tile-b: #643f68; }
+.tile-4 { --tile-a: #b87474; --tile-b: #763c3f; }
+.tile-5 { --tile-a: #7d9a5c; --tile-b: #4a6131; }
+.tile-6 { --tile-a: #5f9fb8; --tile-b: #305f78; }
+.tile-7 { --tile-a: #8f8f9c; --tile-b: #55555f; }
 .icon-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .icon-more { padding: 1px 7px; border-radius: 6px; background: rgb(255 255 255 / .1); color: var(--text-2); font-size: .78rem; font-variant-numeric: tabular-nums; }
 
@@ -220,7 +231,7 @@ input[type="search"]::-webkit-search-decoration { -webkit-appearance: none; }
 .crumbs a { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); }
 .crumbs a:hover { color: var(--text-strong); }
 .crumbs .glyph { width: 16px; height: 16px; }
-.app-hero { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 20px 32px; align-items: center; margin-block: 24px 40px; padding: 28px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); }
+.app-hero { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 20px 24px; align-items: center; margin-block: 24px 40px; padding: 28px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); }
 .app-hero h1 { font-size: clamp(2rem, 4vw, 2.8rem); line-height: 1.15; }
 .app-hero-count { margin-top: 6px; color: var(--text-2); }
 .app-hero-count .num { color: var(--amber); font-weight: 600; font-size: 1.15em; }
@@ -235,7 +246,7 @@ input[type="search"]::-webkit-search-decoration { -webkit-appearance: none; }
 .section-sub { margin: -10px 0 14px; color: var(--text-2); font-size: .88rem; }
 .reasons { display: grid; gap: 10px; }
 .reason { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; padding: 16px 18px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); }
-.reason > .glyph { grid-row: span 2; color: var(--amber); margin-top: 4px; }
+.reason > .glyph { grid-row: span 2; color: rgb(255 255 255 / .38); margin-top: 4px; }
 .reason blockquote p { color: var(--text-strong); font-size: 1.02rem; }
 .reason-by { color: var(--text-2); font-size: .86rem; overflow-wrap: anywhere; }
 .reason-by a { text-decoration: underline; text-decoration-color: rgb(255 255 255 / .25); text-underline-offset: .2em; }
@@ -368,7 +379,7 @@ dialog .button { margin-top: 12px; min-width: 96px; }
   .app-group { grid-template-columns: minmax(0, 1fr); }
   .app-group h3 { padding-top: 0; }
   .app-hero { padding: 20px; gap: 16px; }
-  .app-icon-xl { width: 80px; height: 80px; }
+  .app-icon-xl { width: 56px; height: 56px; }
   .share-actions .button { flex: 1 1 auto; }
   .make-band { padding: 22px; }
   .command { flex-wrap: wrap; }
