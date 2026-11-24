@@ -1,0 +1,54 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { once } from 'node:events';
+import { randomBytes } from 'node:crypto';
+import sharp from 'sharp';
+import { createSoftwareServer } from '../server.mjs';
+
+test('PNG validation, private link, gallery search, deduplication and withdrawal', async t => {
+  const server = createSoftwareServer();
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const base = 'http://127.0.0.1:' + server.address().port;
+  const png = await sharp({ create: { width: 320, height: 180, channels: 3, background: '#324336' } }).png().toBuffer();
+  const payload = { name: '<script>示例署名</script>', title: 'Mac 软件示例', visibility: 'link',
+    apps: [{ name: 'Obsidian', group: '办公' }], image: png.toString('base64') };
+  const post = (data, key) => fetch(base + '/api/v1/shares', {method: 'POST',
+    headers: {'content-type':'application/json', ...(key ? {'idempotency-key': key} : {})}, body: JSON.stringify(data)});
+  assert.equal((await post({...payload, image: Buffer.from('<svg>').toString('base64')})).status, 415);
+  assert.equal((await post({...payload, image: png.subarray(0, 15).toString('base64')})).status, 422);
+  assert.equal((await post({...payload, name: 'a'.repeat(41)})).status, 400);
+  const key = randomBytes(32).toString('hex');
+  const created = await post(payload, key);
+  assert.equal(created.status, 201);
+  const share = await created.json();
+  assert.equal(share.removeToken, key);
+  const path = '/s/' + share.id;
+  const page = await (await fetch(base + path)).text();
+  assert.match(page, /&lt;script&gt;示例署名&lt;\/script&gt;/);
+  assert.doesNotMatch(page, /<script>示例署名/);
+  assert.match(page, /noindex, nofollow/);
+  assert.doesNotMatch(await (await fetch(base + '/?q=Obsidian')).text(), new RegExp(path));
+  assert.doesNotMatch(await (await fetch(base + '/sitemap.xml')).text(), new RegExp(path));
+  const replay = await post(payload, key);
+  assert.equal(replay.status, 200);
+  assert.deepEqual(await replay.json(), share);
+  assert.equal((await post({...payload, name: '改变身份'}, key)).status, 409);
+  const publicResponse = await post({...payload, name:'博客作者', visibility:'public'});
+  assert.equal(publicResponse.status, 201);
+  const publicShare = await publicResponse.json();
+  assert.match(await (await fetch(base + '/?q=obsidian')).text(), new RegExp(publicShare.id));
+  assert.match(await (await fetch(base + '/sitemap.xml')).text(), new RegExp(publicShare.id));
+  const img = await fetch(base + '/media/' + share.id + '.webp');
+  const image = await sharp(Buffer.from(await img.arrayBuffer())).metadata();
+  assert.equal(img.headers.get('content-type'), 'image/webp');
+  assert.equal(image.format, 'webp');
+  assert.equal(image.exif, undefined);
+  const endpoint = base + '/api/v1/shares/' + share.id;
+  assert.equal((await fetch(endpoint + '/reports', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({reason:'Test report'})})).status, 201);
+  assert.equal((await fetch(endpoint, {method: 'DELETE', headers: {authorization: 'Bearer ' + '0'.repeat(64)}})).status, 404);
+  assert.equal((await fetch(endpoint, {method: 'DELETE', headers: {authorization: 'Bearer ' + key}})).status, 204);
+  assert.equal((await fetch(base + path)).status, 404);
+  assert.equal((await fetch(base + '/media/' + share.id + '.webp')).status, 404);
+});
