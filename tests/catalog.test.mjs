@@ -36,7 +36,7 @@ test('catalog backfills public posters, counts each poster once, supports filter
   const base = 'http://127.0.0.1:' + server.address().port;
   const picture = await sharp({create:{width:320,height:180,channels:3,background:'#3366bc'}}).png().toBuffer();
   const html = path => fetch(base+path).then(r=>r.text());
-  const lookup = (app, category) => '/?app=' + encodeURIComponent(app) + (category ? '&category=' + encodeURIComponent(category) : '');
+  const lookup = (app, category) => '/posters?app=' + encodeURIComponent(app) + (category ? '&category=' + encodeURIComponent(category) : '');
   const put = async (title, visibility, apps) => {
     const response = await fetch(base+'/api/v1/shares',{
       method:'POST',headers:{'content-type':'application/json'},
@@ -57,6 +57,7 @@ test('catalog backfills public posters, counts each poster once, supports filter
   const listing = await html('/apps');
   assert.match(listing,/Obsidian/);
   assert.match(listing,/独家工具/);
+  assert.match(listing,/href="\/apps\/obsidian"/);
   assert.doesNotMatch(listing,/隐蔽工具|不公开分类/);
   assert.match(await html('/apps?q=obsidian'),/Obsidian/);
   assert.doesNotMatch(await html('/apps?category='+encodeURIComponent('开发')),/独家工具/);
@@ -76,6 +77,7 @@ test('catalog backfills public posters, counts each poster once, supports filter
       {method:'DELETE',headers:{authorization:'Bearer '+listed.removeToken}});
     assert.equal(remove.status,204);
     assert.equal(count(),1);
-    assert.doesNotMatch(await html('/apps?q='+encodeURIComponent('独家工具')),/\/\?app=.*%E7%8B%AC/);
+    assert.doesNotMatch(await html('/apps?q='+encodeURIComponent('独家工具')),/\/apps\/%E7%8B%AC/);
+    assert.equal((await fetch(base+'/apps/'+encodeURIComponent('独家工具'))).status,404);
   } finally { index.close(); }
 });

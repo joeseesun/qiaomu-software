@@ -1,6 +1,14 @@
 # 乔木软件推荐
 
-把在 Mac 上挑选的好用软件做成可署名分享的海报。在[推荐画廊](https://software.qiaomu.ai/)按软件名、标题或分享名查找作品。每张作品有独立链接和可检索的推荐清单。在[软件目录](https://software.qiaomu.ai/apps)按分类浏览，查看每个软件被多少张公开海报提及。
+大家分享自己 Mac 上真正在用的软件的地方。每张海报来自一位用户的真实桌面，公开海报给其中每款软件投一票。
+
+- [首页](https://software.qiaomu.ai/)：最新海报、最近大家在推荐的软件、分类入口。
+- [海报](https://software.qiaomu.ai/posters)：按软件名、标题或作者查找，可按软件和分类筛选。
+- [软件榜](https://software.qiaomu.ai/apps)：总榜、最近升温（近 30 天）、新上榜三种排序，可按分类筛选。
+- 软件页 `/apps/:名称`：推荐它的海报数、大家写的推荐理由、常一起被推荐的软件。
+- 海报页 `/s/:id`：大图、按分类分组的清单（含图标和理由）、口味相近的海报。
+
+界面设计规范见 [DESIGN.md](DESIGN.md)。
 
 ![示例海报](public/demo.webp)
 
@@ -10,7 +18,9 @@
 
 软件目录以公开海报为统计单位。一张海报里同一个软件即使放在多个分类也只计一次。选了分类后只计该分类的公开海报。目录按软件名称归集，英文名称大小写合并，分享撤回后立即更新。
 
-网站只接收合成图、最终选中的软件名称和分类、标题、分享名和可见范围。后端重新编码图片并去掉源图元数据。仅链接页面可以被转发，且不出现在画廊和站点地图。
+网站只接收合成图、最终选中的软件名称、分类、推荐理由、应用 ID 和图标，以及标题、分享名和可见范围。后端重新编码图片和图标并去掉源图元数据。仅链接页面可以被转发，且不出现在画廊、软件榜和站点地图。
+
+图标按 SHA-256 内容寻址，同一个图标只存一份。同一软件有多个版本的图标时，显示被最多公开海报使用的那个（并列取最新），单次上传无法替换大家公认的图标。运营者可把 `icons` 表中某条记录的 `blocked` 设为 1 来屏蔽它。旧链接 `/?app=…`、`/?q=…` 会 301 到 `/posters`。
 
 ## 开发
 
@@ -22,7 +32,7 @@ npm test
 npm start
 ```
 
-`POST /api/v1/shares` 接收 JSON `{name,title,visibility,apps:[{name,group}],image}`，其中 image 是 PNG 的 Base64，visibility 可为 `link` 或 `public`。客户端可提供 64 位小写十六进制的随机 `Idempotency-Key` 头，让同一上传安全重试。响应含 share ID、URL 和仅供作者使用的撤回凭证。用 `DELETE /api/v1/shares/:id` 并带 `Authorization: Bearer <凭证>` 撤回。撤回凭证不要进日志或分享链接。站点无需用户账号，公开分享按 IP 限流与总存储配额运行。
+`POST /api/v1/shares` 接收 JSON `{name,title,visibility,apps:[{name,group,note?,id?,icon?}],icons?,image}`，其中 image 是 PNG 的 Base64，visibility 可为 `link` 或 `public`。`note` 是不超过 60 字的推荐理由，`id` 是应用 Bundle ID，`icon` 是图标 PNG 的 SHA-256。`icons` 是 `{sha256: PNG 的 Base64}`，只能包含 apps 引用过的指纹，每个 32–512px 正方形、不超过 64 KiB，合计不超过 1.5 MiB；服务端校验指纹后转成 128px WebP，已有的指纹直接跳过。上传前可用 `POST /api/v1/icons/lookup` 发送 `{hashes:[最多 48 个指纹]}`，响应 `{missing:[…]}` 列出网站还没有的指纹，客户端只需上传这些。图标由 `GET /icons/:sha256.webp` 提供，长期缓存。客户端可提供 64 位小写十六进制的随机 `Idempotency-Key` 头，让同一上传安全重试。响应含 share ID、URL 和仅供作者使用的撤回凭证。用 `DELETE /api/v1/shares/:id` 并带 `Authorization: Bearer <凭证>` 撤回。撤回凭证不要进日志或分享链接。站点无需用户账号，公开分享按 IP 限流与总存储配额运行。
 
 ## 部署维护
 

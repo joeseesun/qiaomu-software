@@ -29,7 +29,7 @@ test('PNG validation, private link, gallery search, deduplication and withdrawal
   assert.match(page, /&lt;script&gt;示例署名&lt;\/script&gt;/);
   assert.doesNotMatch(page, /<script>示例署名/);
   assert.match(page, /noindex, nofollow/);
-  assert.doesNotMatch(await (await fetch(base + '/?q=Obsidian')).text(), new RegExp(path));
+  assert.doesNotMatch(await (await fetch(base + '/posters?q=Obsidian')).text(), new RegExp(path));
   assert.doesNotMatch(await (await fetch(base + '/sitemap.xml')).text(), new RegExp(path));
   const replay = await post(payload, key);
   assert.equal(replay.status, 200);
@@ -38,7 +38,7 @@ test('PNG validation, private link, gallery search, deduplication and withdrawal
   const publicResponse = await post({...payload, name:'博客作者', visibility:'public'});
   assert.equal(publicResponse.status, 201);
   const publicShare = await publicResponse.json();
-  assert.match(await (await fetch(base + '/?q=obsidian')).text(), new RegExp(publicShare.id));
+  assert.match(await (await fetch(base + '/posters?q=obsidian')).text(), new RegExp(publicShare.id));
   assert.match(await (await fetch(base + '/sitemap.xml')).text(), new RegExp(publicShare.id));
   const img = await fetch(base + '/media/' + share.id + '.webp');
   const image = await sharp(Buffer.from(await img.arrayBuffer())).metadata();
