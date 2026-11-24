@@ -1,0 +1,27 @@
+[Unit]
+Description=Qiaomu Software recommendation gallery
+After=network.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+WorkingDirectory=/opt/qiaomu-apps/qiaomu-software/current
+ExecStart=/usr/bin/node server.mjs
+StateDirectory=qiaomu-software
+StateDirectoryMode=0700
+Environment=NODE_ENV=production
+Environment=PORT=3268
+Environment=DATA_DIR=/var/lib/qiaomu-software
+Environment=PUBLIC_ORIGIN=https://software.qiaomu.ai
+Environment=TRUST_PROXY=1
+EnvironmentFile=-/etc/qiaomu-software.env
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+MemoryMax=512M
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
