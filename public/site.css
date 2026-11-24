@@ -1,19 +1,19 @@
 :root {
   color-scheme: dark;
   --bg: #0c0e12;
-  --surface: #15181e;
-  --surface-2: #1d2129;
-  --surface-3: #252a33;
-  --line: rgb(255 255 255 / .08);
-  --line-strong: rgb(255 255 255 / .16);
+  --surface: #171a21;
+  --surface-2: #20242e;
+  --surface-3: #2a303b;
+  --line: rgb(255 255 255 / .09);
+  --line-strong: rgb(255 255 255 / .18);
   --text: rgb(255 255 255 / .88);
   --text-strong: rgb(255 255 255 / .96);
   --text-2: rgb(255 255 255 / .66);
   --amber: #ffb547;
   --amber-hover: #ffc56e;
-  --amber-ink: #1d1404;
+  --amber-ink: #241503;
   --amber-tint: rgb(255 181 71 / .14);
-  --radius: 10px;
+  --radius: 12px;
   --ease: cubic-bezier(.23, 1, .32, 1);
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
   font-size: 16px;
@@ -58,16 +58,16 @@ code, kbd { font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; }
 .header-search input[type="search"] { width: 100%; min-height: 38px; padding: 6px 36px 6px 38px; border-radius: 999px; background: rgb(255 255 255 / .07); border: 1px solid var(--line); font-size: .92rem; }
 .header-search kbd { position: absolute; right: 10px; padding: 0 6px; border: 1px solid var(--line-strong); border-radius: 5px; color: var(--text-2); font-size: .75rem; line-height: 1.5; }
 .header-search input:focus + kbd { display: none; }
-.header-make { min-height: 38px; padding-inline: 14px; }
+.header-make { min-height: 36px; padding-inline: 15px; border-radius: 999px; font-size: .9rem; }
 
 /* Buttons */
 .actions { display: flex; flex-wrap: wrap; gap: 10px; }
-.button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 9px 18px; border: 1px solid transparent; border-radius: 10px; font-weight: 600; font-size: .95rem; line-height: 1.2; white-space: nowrap; transition: background-color .15s, border-color .15s, color .15s, transform .15s var(--ease); }
+.button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 9px 18px; border: 1px solid transparent; border-radius: 12px; font-weight: 600; font-size: .95rem; line-height: 1.2; white-space: nowrap; transition: background-color .15s, border-color .15s, color .15s, transform .15s var(--ease), box-shadow .15s; }
 .button:active { transform: scale(.97); }
-.primary { background: var(--amber); color: var(--amber-ink); }
-.primary:hover { background: var(--amber-hover); }
-.secondary { background: rgb(255 255 255 / .06); color: var(--text-strong); border-color: var(--line-strong); }
-.secondary:hover { background: rgb(255 255 255 / .1); border-color: rgb(255 255 255 / .28); }
+.primary { background: linear-gradient(180deg, #ffc463, #ffa628); color: var(--amber-ink); box-shadow: inset 0 1px 0 rgb(255 255 255 / .38), 0 1px 2px rgb(0 0 0 / .35), 0 8px 18px -8px rgb(255 166 43 / .55); }
+.primary:hover { background: linear-gradient(180deg, #ffce80, #ffba4a); box-shadow: inset 0 1px 0 rgb(255 255 255 / .42), 0 1px 2px rgb(0 0 0 / .35), 0 10px 22px -8px rgb(255 166 43 / .6); }
+.secondary { background: rgb(255 255 255 / .07); color: var(--text-strong); border-color: var(--line-strong); box-shadow: inset 0 1px 0 rgb(255 255 255 / .06); }
+.secondary:hover { background: rgb(255 255 255 / .11); border-color: rgb(255 255 255 / .28); }
 .small { min-height: 34px; padding: 5px 12px; font-size: .86rem; border-radius: 8px; }
 button:disabled { opacity: .6; cursor: progress; }
 .text-link { display: inline-flex; align-items: center; gap: 4px; color: var(--amber); font-weight: 500; white-space: nowrap; }
@@ -334,7 +334,7 @@ dialog img { margin: 14px auto; border-radius: 8px; background: #fff; }
 dialog .button { margin-top: 12px; min-width: 96px; }
 
 @media (hover: hover) and (pointer: fine) {
-  .app-card:hover { background: var(--surface-2); border-color: var(--line-strong); transform: translateY(-2px); }
+  .app-card:hover { background: var(--surface-2); border-color: var(--line-strong); transform: translateY(-2px); box-shadow: 0 12px 28px -14px rgb(0 0 0 / .7); }
   .poster-thumb:hover { transform: translateY(-3px); box-shadow: 0 16px 40px rgb(0 0 0 / .5), 0 0 0 1px rgb(255 255 255 / .16); }
   .poster-card h3 a:hover { color: var(--amber); }
   .hero-art:hover { transform: translateY(-3px); }
