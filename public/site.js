@@ -1,12 +1,20 @@
 async function copy(text, button) {
-  const original = button.textContent;
+  if (button.dataset.busy) return;
+  button.dataset.busy = '1';
+  const original = button.innerHTML;
+  const width = button.offsetWidth;
+  button.style.minWidth = width + 'px';
   try {
     await navigator.clipboard.writeText(text);
     button.textContent = '已复制';
   } catch {
     button.textContent = '请手动复制';
   }
-  setTimeout(() => { button.textContent = original; }, 1600);
+  setTimeout(() => {
+    button.innerHTML = original;
+    button.style.minWidth = '';
+    delete button.dataset.busy;
+  }, 1600);
 }
 for (const button of document.querySelectorAll('button[data-copy]')) {
   button.addEventListener('click', () => copy(document.getElementById(button.dataset.copy).textContent, button));
@@ -14,6 +22,19 @@ for (const button of document.querySelectorAll('button[data-copy]')) {
 for (const button of document.querySelectorAll('button[data-copy-url]')) {
   button.addEventListener('click', () => copy(location.href, button));
 }
+const headerSearch = document.getElementById('header-q');
+document.addEventListener('keydown', event => {
+  if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey || !headerSearch) return;
+  const target = event.target;
+  if (target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+  if (document.querySelector('dialog[open]')) return;
+  event.preventDefault();
+  const pageSearch = document.querySelector('main input[type="search"]');
+  const field = pageSearch && pageSearch.offsetParent !== null ? pageSearch : headerSearch;
+  field.focus();
+  field.select();
+});
+
 for (const form of document.querySelectorAll('form[data-report]')) {
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
