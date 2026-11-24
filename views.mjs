@@ -166,7 +166,7 @@ function pager(page, hasNext, url) {
 
 const chip = (label, value, clear) => `<a class="chip-clear" href="${clear}"><span class="chip-label">${label}</span><span class="chip-value">${esc(value)}</span><span class="chip-x" aria-hidden="true">×</span><span class="sr">，清除这个条件</span></a>`;
 
-const statLine = (stats) => `<p class="stat-line">${num(stats.posters)} 张公开海报<span class="dot" aria-hidden="true">·</span>${num(stats.apps)} 款软件<span class="dot" aria-hidden="true">·</span>${num(stats.notes)} 条推荐理由</p>`;
+const statLine = (stats) => `<p class="stat-line">${num(stats.posters)} 张公开海报<span class="dot" aria-hidden="true">·</span>${num(stats.apps)} 款软件${stats.notes ? `<span class="dot" aria-hidden="true">·</span>${num(stats.notes)} 条推荐理由` : ''}</p>`;
 
 export function home({ origin, umamiId, stats, popular = [], rising = false, latest = [], categories = [] }) {
   const featured = latest[0];
