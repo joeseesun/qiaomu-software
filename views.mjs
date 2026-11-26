@@ -867,7 +867,7 @@ export function comparePage({ origin, umamiId, sideA, sideB, overlap, topChoices
         ${appIcon(side, 'lg')}
         <div>
           <h2><a href="${appHref(side.key)}">${esc(side.name)}</a></h2>
-          <p class="app-hero-count">被 ${num(side.count)} 张海报推荐${side.pricing ? `<span class="dot">·</span><span class="mini-tag">${esc(side.pricing)}</span>` : ''}</p>
+          <p class="app-hero-count">被 ${num(side.count)} 张海报推荐${side.pricing ? `<span class="dot">·</span>${pricingTag(side.pricing)}` : ''}</p>
         </div>
         ${kitButton(side)}
       </div>
