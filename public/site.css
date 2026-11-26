@@ -454,7 +454,8 @@ body.has-kit-fab .to-top { bottom: 82px; }
 .recipe-chip strong { color: var(--text-strong); font-size: .9rem; }
 .recipe-chip span { color: var(--text-2); font-size: .74rem; }
 .studio-modal-xs { width: min(460px, calc(100% - 24px)); }
-.app-edit-head { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.studio-modal-xs .modal-head { flex-wrap: nowrap; align-items: flex-start; }
+.app-edit-head { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
 .app-edit-head img { border-radius: 8px; flex: none; }
 .app-edit-body { display: grid; gap: 14px; }
 .app-edit-field { display: grid; gap: 6px; font-size: .86rem; color: var(--text-2); }
