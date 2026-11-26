@@ -1,8 +1,6 @@
 // Browser-based Mac Software Poster Studio (/studio)
-// 1:1 native macOS poster aesthetic (matching qiaomu-mac-software render.js & demo.webp):
-// - 20 curated Unsplash desktop wallpapers (self-hosted WebP) + custom upload
-// - Click-to-pick from all existing community-submitted apps with real consensus icons
-// - Enter your name and publish (POST) / update in-place (PUT) / download PNG in 30s!
+// Clean Canvas Stage + Modal Pickers (Apps, 20 Wallpapers, Open-Source Fonts & Custom/Hidden Watermark)
+// Renders 1:1 native macOS poster aesthetic with 130+ real app icons & sends `source: 'web'` on publish.
 
 (() => {
   const root = document.getElementById('studio-root');
@@ -13,12 +11,18 @@
 
   const canvas = document.getElementById('studio-canvas');
   const ctx = canvas.getContext('2d');
+  const appsModal = document.getElementById('studio-apps-modal');
+  const bgModal = document.getElementById('studio-bg-modal');
+  const styleModal = document.getElementById('studio-style-modal');
+
   const bgFileInput = document.getElementById('studio-bg-file');
+  const bgLabelEl = document.getElementById('studio-bg-label');
   const titleInput = document.getElementById('studio-title');
   const nameInput = document.getElementById('studio-name');
   const roleInput = document.getElementById('studio-role');
   const visSelect = document.getElementById('studio-visibility');
-  const scrimSelect = document.getElementById('studio-scrim');
+  const watermarkInput = document.getElementById('studio-watermark');
+  const watermarkShow = document.getElementById('studio-watermark-show');
   const publishBtn = document.getElementById('studio-publish');
   const downloadBtn = document.getElementById('studio-download');
   const statusEl = document.getElementById('studio-status');
@@ -27,6 +31,7 @@
   const addCustomBtn = document.getElementById('studio-add-custom');
   const selectedListEl = document.getElementById('studio-selected-list');
   const appCountEl = document.getElementById('studio-app-count');
+  const modalAppCountEl = document.getElementById('modal-app-count');
   const historyCard = document.getElementById('studio-history-card');
   const historyList = document.getElementById('studio-history');
   const pickHotBtn = document.getElementById('studio-pick-hot');
@@ -50,13 +55,64 @@
     ['#8f8f9c', '#55555f'],
   ];
 
-  let bgImage = null; // HTMLImageElement or ImageBitmap
+  // 4 Poster Font Presets (classic STSongti/Noto Serif + SmileySans + LXGW WenKai + Modern Sans)
+  const FONT_PRESETS = {
+    songti: {
+      heading: (sz) => `700 ${sz}px "STSongti-SC-Bold", "Songti SC", "Noto Serif SC", Georgia, serif`,
+      label: (sz) => `700 ${sz}px "STSongti-SC-Bold", "Songti SC", "Noto Serif SC", Georgia, serif`,
+      cssUrl: 'https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@700&display=swap',
+      familyName: 'Noto Serif SC',
+    },
+    smiley: {
+      heading: (sz) => `400 ${sz}px "SmileySans", "PingFang SC", sans-serif`,
+      label: (sz) => `400 ${sz}px "SmileySans", "PingFang SC", sans-serif`,
+      localUrl: '/fonts/SmileySans-Oblique.otf',
+      familyName: 'SmileySans',
+    },
+    wenkai: {
+      heading: (sz) => `700 ${sz}px "LXGW WenKai", "LXGW WenKai TC", "Kaiti SC", serif`,
+      label: (sz) => `700 ${sz}px "LXGW WenKai", "LXGW WenKai TC", "Kaiti SC", serif`,
+      cssUrl: 'https://fontsapi.zeoseven.com/292/main/result.css',
+      familyName: 'LXGW WenKai',
+    },
+    sans: {
+      heading: (sz) => `700 ${sz}px -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Noto Sans SC", sans-serif`,
+      label: (sz) => `600 ${sz}px -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Noto Sans SC", sans-serif`,
+    },
+  };
+
+  let activeFont = 'songti';
+  let activeScrim = 'desktop';
+  let bgImage = null;
   let activeWallpaperUrl = wallpapers[0]?.url || '';
   let activeThemeFilter = '';
-  let editing = null; // { id, token }
-  const selectedApps = []; // [{ name, key, group, note, icon }]
-  const iconImages = new Map(); // hash -> HTMLImageElement
-  const wallpaperCache = new Map(); // url -> HTMLImageElement
+  let editing = null;
+  const selectedApps = [];
+  const iconImages = new Map();
+  const wallpaperCache = new Map();
+  const loadedFonts = new Set();
+
+  async function ensureFontLoaded(fontId) {
+    const preset = FONT_PRESETS[fontId];
+    if (!preset || loadedFonts.has(fontId)) return;
+    loadedFonts.add(fontId);
+    try {
+      if (preset.localUrl && 'FontFace' in window) {
+        const face = new FontFace(preset.familyName, `url(${preset.localUrl})`);
+        await face.load();
+        document.fonts.add(face);
+      } else if (preset.cssUrl) {
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = preset.cssUrl;
+        document.head.append(link);
+        await new Promise(resolve => { link.onload = resolve; link.onerror = resolve; setTimeout(resolve, 2500); });
+        if (document.fonts?.load) {
+          await document.fonts.load(`700 48px "${preset.familyName}"`).catch(() => {});
+        }
+      }
+    } catch {}
+  }
 
   function loadOwned() {
     try { return JSON.parse(localStorage.getItem(OWNED_KEY) || '[]'); }
@@ -77,10 +133,7 @@
       img.src = url;
     });
   }
-
-  function loadIconImage(hash) {
-    return hash ? loadImage('/icons/' + hash + '.webp', iconImages) : Promise.resolve(null);
-  }
+  const loadIconImage = (hash) => hash ? loadImage('/icons/' + hash + '.webp', iconImages) : Promise.resolve(null);
 
   function roundedRect(c, x, y, w, h, r) {
     c.beginPath();
@@ -158,8 +211,8 @@
     return rows;
   }
 
-  // Matches qiaomu-mac-software/scripts/render.js & demo.webp visual design!
   async function renderPoster() {
+    await ensureFontLoaded(activeFont);
     if (!bgImage && activeWallpaperUrl) {
       bgImage = await loadImage(activeWallpaperUrl, wallpaperCache);
     }
@@ -175,13 +228,12 @@
       canvas.height = H;
     }
 
-    // 1. Full-bleed photography wallpaper + authentic macOS scrim gradients
     ctx.fillStyle = '#0f1822';
     ctx.fillRect(0, 0, W, H);
 
     if (bgImage) {
       drawCover(bgImage, W, H);
-      const isNight = scrimSelect?.value === 'night';
+      const isNight = activeScrim === 'night';
       ctx.fillStyle = `rgba(10, 18, 28, ${isNight ? 0.56 : 0.30})`;
       ctx.fillRect(0, 0, W, H);
 
@@ -197,20 +249,13 @@
       topGrad.addColorStop(1, 'rgba(8, 13, 20, 0.44)');
       ctx.fillStyle = topGrad;
       ctx.fillRect(0, 0, W, H);
-    } else {
-      const g = ctx.createLinearGradient(0, 0, W, H);
-      g.addColorStop(0, '#102938');
-      g.addColorStop(1, '#263f3d');
-      ctx.fillStyle = g;
-      ctx.fillRect(0, 0, W, H);
     }
 
     const white = '#fffbf4';
     const quiet = 'rgba(255, 251, 244, 0.78)';
-    const serifFont = (sz) => `700 ${sz}px "Songti SC", "STSongti-SC-Bold", "Noto Serif CJK SC", "PingFang SC", Georgia, serif`;
-    const uiFont = (sz, weight = 600) => `${weight} ${sz}px -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Noto Sans SC", sans-serif`;
+    const fp = FONT_PRESETS[activeFont] || FONT_PRESETS.songti;
+    const uiFont = (sz, weight = 600) => `${weight} ${sz}px "Avenir Next", -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Noto Sans SC", sans-serif`;
 
-    // Helper for crisp text with drop shadow matching render.js
     const drawShadowText = (text, x, y, align = 'left', color = white) => {
       ctx.save();
       ctx.shadowColor = 'rgba(0, 0, 0, 0.82)';
@@ -224,13 +269,13 @@
       ctx.restore();
     };
 
-    // 2. Title heading
     const rawTitle = titleInput.value.trim() || `${new Date().getFullYear()} 我推荐的 Mac 软件`;
-    const fittedHeading = fitText(rawTitle, serifFont, 68, 40, W - 128);
-    ctx.font = serifFont(fittedHeading.size);
+    const headingBase = activeFont === 'smiley' ? 76 : 68;
+    const fittedHeading = fitText(rawTitle, fp.heading, headingBase, 40, W - 128);
+    ctx.font = fp.heading(fittedHeading.size);
     drawShadowText(fittedHeading.text, 64, 132, 'left', white);
 
-    // 3. Footer signature & domain
+    // Bottom-left signature
     const author = nameInput.value.trim();
     const role = roleInput?.value.trim() || '';
     if (author) {
@@ -239,17 +284,22 @@
       ctx.font = uiFont(20, 500);
       drawShadowText(footerLeft, 64, H - 30, 'left', quiet);
     }
-    ctx.font = uiFont(19, 500);
-    drawShadowText('software.qiaomu.ai', W - 64, H - 30, 'right', quiet);
 
-    // 4. Empty hint when no apps selected yet
+    // Bottom-right watermark (customizable or hidden!)
+    if (watermarkShow?.checked) {
+      const wmText = (watermarkInput?.value ?? 'software.qiaomu.ai').trim();
+      if (wmText) {
+        ctx.font = uiFont(19, 500);
+        drawShadowText(wmText, W - 64, H - 30, 'right', quiet);
+      }
+    }
+
     if (!rows.length) {
       ctx.font = uiFont(28, 500);
-      drawShadowText('在下方点选你常用的 Mac 软件，这里会实时生成同款桌面海报', W / 2, H / 2 + 12, 'center', 'rgba(255,251,244,0.82)');
+      drawShadowText('点击下方「选软件」挑几款你常用的 Mac 应用', W / 2, H / 2 + 12, 'center', 'rgba(255,251,244,0.84)');
       return;
     }
 
-    // 5. Grouped horizontal app rows (identical rhythm to demo.webp!)
     const labelW = 198;
     const cols = Math.max(6, ...rows.map(r => r.apps.length));
     const step = (W - labelW - 128) / cols;
@@ -258,8 +308,9 @@
     rows.forEach((row, rowIdx) => {
       const rowTop = 186 + rowIdx * rowHeight;
       if (row.label) {
-        const fittedLabel = fitText(row.label, serifFont, 30, 18, labelW - 22);
-        ctx.font = serifFont(fittedLabel.size);
+        const labelBase = activeFont === 'smiley' ? 34 : 30;
+        const fittedLabel = fitText(row.label, fp.label, labelBase, 18, labelW - 22);
+        ctx.font = fp.label(fittedLabel.size);
         drawShadowText(fittedLabel.text, 64, rowTop + iconSize * 0.60, 'left', white);
       }
 
@@ -287,13 +338,16 @@
   }
 
   function syncCatalogHighlights() {
-    appCountEl.textContent = String(selectedApps.length);
+    const countStr = String(selectedApps.length);
+    appCountEl.textContent = countStr;
+    if (modalAppCountEl) modalAppCountEl.textContent = countStr;
     const chosenKeys = new Set(selectedApps.map(a => a.key));
     for (const btn of document.querySelectorAll('[data-catalog-key]')) {
       const on = chosenKeys.has(btn.dataset.catalogKey);
       btn.classList.toggle('is-selected', on);
       btn.setAttribute('aria-pressed', on ? 'true' : 'false');
     }
+    if (activeThemeFilter === '__selected') filterCatalogGrid();
     renderSelectedEditor();
   }
 
@@ -302,21 +356,20 @@
     if (!selectedApps.length) {
       const li = document.createElement('li');
       li.className = 'kit-sub';
-      li.textContent = '还没有选中任何软件。在下方点选软件后，这里可以微调分类或补写推荐理由。';
+      li.textContent = '暂未选择软件';
       selectedListEl.append(li);
       return;
     }
     selectedApps.forEach((app, idx) => {
       const li = document.createElement('li');
       li.className = 'studio-app-item';
-
       const top = document.createElement('div');
       top.className = 'studio-app-top';
       if (app.icon) {
         const img = document.createElement('img');
         img.src = '/icons/' + app.icon + '.webp';
-        img.width = 28;
-        img.height = 28;
+        img.width = 24;
+        img.height = 24;
         img.alt = '';
         top.append(img);
       }
@@ -346,7 +399,7 @@
       noteInput.type = 'text';
       noteInput.maxLength = 60;
       noteInput.value = app.note || '';
-      noteInput.placeholder = '写一句推荐理由（可选，最多 60 字）';
+      noteInput.placeholder = '推荐理由（可选，60 字内）';
       noteInput.addEventListener('input', () => { app.note = noteInput.value.trim(); });
 
       controls.append(catInput, noteInput);
@@ -356,11 +409,8 @@
   }
 
   function addApp(item) {
-    if (selectedApps.length >= 48) {
-      statusEl.textContent = '每张海报最多选择 48 款软件。';
-      return false;
-    }
-    const key = (item.key || item.name.trim().toLowerCase());
+    if (selectedApps.length >= 48) { statusEl.textContent = '每张海报最多选择 48 款软件。'; return false; }
+    const key = item.key || item.name.trim().toLowerCase();
     if (!key || selectedApps.some(a => a.key === key)) return false;
     selectedApps.push({
       name: item.name.trim(),
@@ -374,9 +424,8 @@
 
   function toggleCatalogApp(key) {
     const idx = selectedApps.findIndex(a => a.key === key);
-    if (idx >= 0) {
-      selectedApps.splice(idx, 1);
-    } else {
+    if (idx >= 0) selectedApps.splice(idx, 1);
+    else {
       const found = catalogByKey.get(key);
       if (found) addApp(found);
     }
@@ -386,19 +435,23 @@
 
   function filterCatalogGrid() {
     const q = (appSearch?.value || '').trim().toLowerCase();
+    const chosenKeys = new Set(selectedApps.map(a => a.key));
     for (const btn of document.querySelectorAll('[data-catalog-key]')) {
       const key = btn.dataset.catalogKey;
       const app = catalogByKey.get(key);
       const themes = (btn.dataset.catalogThemes || '').split(',').filter(Boolean);
-      const matchTheme = !activeThemeFilter || themes.includes(activeThemeFilter);
+      const matchTheme = activeThemeFilter === '__selected'
+        ? chosenKeys.has(key)
+        : (!activeThemeFilter || themes.includes(activeThemeFilter));
       const matchQ = !q || key.includes(q) || (app?.name || '').toLowerCase().includes(q) || (app?.summary || '').toLowerCase().includes(q);
       btn.closest('li').hidden = !(matchTheme && matchQ);
     }
   }
 
-  async function selectWallpaper(url, tileBtn = null) {
+  async function selectWallpaper(url, name, tileBtn = null) {
     activeWallpaperUrl = url;
     bgImage = await loadImage(url, wallpaperCache);
+    if (bgLabelEl && name) bgLabelEl.textContent = name;
     for (const other of document.querySelectorAll('[data-wallpaper-url]')) {
       const on = tileBtn ? other === tileBtn : other.dataset.wallpaperUrl === url;
       other.classList.toggle('is-active', on);
@@ -407,22 +460,21 @@
     renderPoster();
   }
 
-  // Click cards in full catalog grid
+  // Modal openers
+  document.getElementById('open-apps-modal')?.addEventListener('click', () => appsModal?.showModal());
+  document.getElementById('open-bg-modal')?.addEventListener('click', () => bgModal?.showModal());
+  document.getElementById('open-style-modal')?.addEventListener('click', () => styleModal?.showModal());
+
   for (const btn of document.querySelectorAll('[data-catalog-key]')) {
     btn.addEventListener('click', () => toggleCatalogApp(btn.dataset.catalogKey));
   }
-
-  // Theme filter bar
   for (const btn of document.querySelectorAll('[data-studio-theme]')) {
     btn.addEventListener('click', () => {
       activeThemeFilter = btn.dataset.studioTheme;
-      for (const other of document.querySelectorAll('[data-studio-theme]')) {
-        other.classList.toggle('is-on', other === btn);
-      }
+      for (const other of document.querySelectorAll('[data-studio-theme]')) other.classList.toggle('is-on', other === btn);
       filterCatalogGrid();
     });
   }
-
   appSearch?.addEventListener('input', filterCatalogGrid);
 
   const addCustomFromInput = () => {
@@ -437,42 +489,43 @@
     renderPoster();
   };
   addCustomBtn?.addEventListener('click', addCustomFromInput);
-  appSearch?.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); addCustomFromInput(); }
-  });
+  appSearch?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addCustomFromInput(); } });
 
-  // One-click pick top 12 non-system apps
   pickHotBtn?.addEventListener('click', () => {
-    const picks = catalog.filter(a => !a.isSystem).slice(0, 12);
-    for (const a of picks) addApp(a);
+    for (const a of catalog.filter(x => !x.isSystem).slice(0, 12)) addApp(a);
     syncCatalogHighlights();
     renderPoster();
   });
-
   clearAppsBtn?.addEventListener('click', () => {
     selectedApps.length = 0;
     syncCatalogHighlights();
     renderPoster();
   });
 
-  // 20 Wallpaper picker tiles + Random button + Custom file upload
+  // Wallpaper & scrim controls
   for (const btn of document.querySelectorAll('[data-wallpaper-url]')) {
-    btn.addEventListener('click', () => selectWallpaper(btn.dataset.wallpaperUrl, btn));
+    btn.addEventListener('click', () => selectWallpaper(btn.dataset.wallpaperUrl, btn.dataset.wallpaperName, btn));
   }
-
+  for (const btn of document.querySelectorAll('[data-scrim]')) {
+    btn.addEventListener('click', () => {
+      activeScrim = btn.dataset.scrim;
+      for (const other of document.querySelectorAll('[data-scrim]')) other.classList.toggle('is-on', other === btn);
+      renderPoster();
+    });
+  }
   randomBgBtn?.addEventListener('click', () => {
     if (!wallpapers.length) return;
     const pool = wallpapers.filter(w => w.url !== activeWallpaperUrl);
     const next = pool[Math.floor(Math.random() * pool.length)] || wallpapers[0];
-    selectWallpaper(next.url);
+    selectWallpaper(next.url, next.name);
   });
-
   bgFileInput?.addEventListener('change', async () => {
     const file = bgFileInput.files?.[0];
     if (!file) return;
     try {
       bgImage = await createImageBitmap(file);
       activeWallpaperUrl = '';
+      if (bgLabelEl) bgLabelEl.textContent = '自定义壁纸';
       for (const other of document.querySelectorAll('[data-wallpaper-url]')) {
         other.classList.remove('is-active');
         other.setAttribute('aria-pressed', 'false');
@@ -483,15 +536,31 @@
     }
   });
 
-  [titleInput, nameInput, roleInput, scrimSelect].forEach(el => el?.addEventListener('input', renderPoster));
-  scrimSelect?.addEventListener('change', renderPoster);
+  // Font & watermark controls
+  for (const btn of document.querySelectorAll('[data-font]')) {
+    btn.addEventListener('click', async () => {
+      activeFont = btn.dataset.font;
+      for (const other of document.querySelectorAll('[data-font]')) {
+        const on = other === btn;
+        other.classList.toggle('is-active', on);
+        other.setAttribute('aria-pressed', on ? 'true' : 'false');
+      }
+      statusEl.textContent = '正在应用字体…';
+      await renderPoster();
+      statusEl.textContent = '';
+    });
+  }
+  [titleInput, nameInput, roleInput, watermarkInput].forEach(el => el?.addEventListener('input', renderPoster));
+  watermarkShow?.addEventListener('change', () => {
+    if (watermarkInput) watermarkInput.disabled = !watermarkShow.checked;
+    renderPoster();
+  });
 
-  // Batch paste import from `ls /Applications`
+  // Paste ls /Applications batch import
   pasteBtn?.addEventListener('click', async () => {
     const rawText = pasteInput?.value?.trim();
     if (!rawText) { pasteInput?.focus(); return; }
     pasteBtn.disabled = true;
-    statusEl.textContent = '正在匹配站内图标并分类…';
     try {
       const res = await fetch('/api/v1/parse-apps', {
         method: 'POST',
@@ -509,12 +578,10 @@
       pasteInput.value = '';
       syncCatalogHighlights();
       renderPoster();
-      statusEl.textContent = added ? `已自动导入 ${added} 款软件并匹配共识图标！` : '没有新增软件（可能已在清单中或均为系统自带应用）。';
+      statusEl.textContent = added ? `已导入 ${added} 款软件` : '没有新增软件';
     } catch (err) {
       statusEl.textContent = err.message || '解析失败。';
-    } finally {
-      pasteBtn.disabled = false;
-    }
+    } finally { pasteBtn.disabled = false; }
   });
 
   function renderHistory() {
@@ -527,37 +594,30 @@
       link.href = '/s/' + item.id;
       link.className = 'text-link';
       link.textContent = item.title || item.id;
-
       const acts = document.createElement('div');
       acts.className = 'studio-history-actions';
-
       const editBtn = document.createElement('button');
       editBtn.type = 'button';
       editBtn.className = 'button secondary small';
       editBtn.textContent = '载入编辑';
       editBtn.addEventListener('click', () => loadForEdit(item.id, item.token));
-
       const delBtn = document.createElement('button');
       delBtn.type = 'button';
       delBtn.className = 'button secondary small';
       delBtn.textContent = '撤回删除';
       delBtn.addEventListener('click', async () => {
-        if (!confirm('确认从网站撤回这张海报？撤回后链接将失效。')) return;
+        if (!confirm('确认从网站撤回这张海报？')) return;
         const res = await fetch('/api/v1/shares/' + item.id, {
           method: 'DELETE',
           headers: { authorization: 'Bearer ' + item.token },
         });
         if (res.ok || res.status === 404) {
           saveOwned(loadOwned().filter(x => x.id !== item.id));
-          if (editing?.id === item.id) {
-            editing = null;
-            publishBtn.textContent = '生成并发布到画廊';
-          }
+          if (editing?.id === item.id) { editing = null; publishBtn.textContent = '发布海报'; }
           renderHistory();
           statusEl.textContent = '已撤回该海报。';
         }
       });
-
       acts.append(editBtn, delBtn);
       li.append(link, acts);
       historyList.append(li);
@@ -565,11 +625,9 @@
   }
 
   async function loadForEdit(id, token) {
-    statusEl.textContent = '正在载入海报数据…';
+    statusEl.textContent = '正在载入海报…';
     try {
-      const res = await fetch('/api/v1/shares/' + id, {
-        headers: { authorization: 'Bearer ' + token },
-      });
+      const res = await fetch('/api/v1/shares/' + id, { headers: { authorization: 'Bearer ' + token } });
       if (!res.ok) throw new Error('无法载入该海报（可能已被撤回）。');
       const data = await res.json();
       editing = { id, token };
@@ -581,20 +639,15 @@
       for (const a of data.apps) {
         selectedApps.push({ name: a.name, key: a.name.toLowerCase(), group: a.group, note: a.note || '', icon: a.icon || '' });
       }
-      publishBtn.textContent = '更新这张海报';
-      statusEl.textContent = `正在编辑海报「${data.title}」，保存后原链接保持不变。`;
+      publishBtn.textContent = '更新海报';
+      statusEl.textContent = `正在编辑「${data.title}」，保存后原链接不变。`;
       syncCatalogHighlights();
       renderPoster();
-    } catch (err) {
-      statusEl.textContent = err.message;
-    }
+    } catch (err) { statusEl.textContent = err.message; }
   }
 
   downloadBtn?.addEventListener('click', async () => {
-    if (!selectedApps.length) {
-      statusEl.textContent = '请先在下方点选至少 1 款软件。';
-      return;
-    }
+    if (!selectedApps.length) { appsModal?.showModal(); return; }
     await renderPoster();
     const url = canvas.toDataURL('image/png');
     const a = document.createElement('a');
@@ -608,19 +661,19 @@
     const name = nameInput.value.trim();
     const title = titleInput.value.trim() || `${new Date().getFullYear()} 我推荐的 Mac 软件`;
     const role = roleInput?.value.trim() || '';
-    if (!selectedApps.length) { statusEl.textContent = '请先在下方点选至少 1 款软件（也可以点「一键勾选热门 12 款」）。'; return; }
-    if (!name) { statusEl.textContent = '请输入你的名字（署名），就能立刻发布海报！'; nameInput.focus(); return; }
+    if (!selectedApps.length) { appsModal?.showModal(); return; }
+    if (!name) { statusEl.textContent = '请先输入你的名字（署名）。'; nameInput.focus(); return; }
 
     publishBtn.disabled = true;
     statusEl.textContent = editing ? '正在更新海报…' : '正在生成高清海报并发布…';
     try {
       await renderPoster();
-      const dataUrl = canvas.toDataURL('image/png');
-      const base64 = dataUrl.split(',')[1];
+      const base64 = canvas.toDataURL('image/png').split(',')[1];
       const payload = {
         name,
         title,
         role: role || undefined,
+        source: 'web',
         visibility: visSelect?.value || 'public',
         apps: selectedApps.map(a => ({
           name: a.name,
@@ -640,22 +693,19 @@
         body: JSON.stringify(payload),
       });
       const result = await res.json();
-      if (!res.ok) throw new Error(result.error || '发布失败，请稍后重试。');
+      if (!res.ok) throw new Error(result.error || '发布失败。');
 
       const owned = loadOwned().filter(x => x.id !== result.id);
       owned.unshift({ id: result.id, token: result.removeToken, title });
       saveOwned(owned);
       renderHistory();
-      statusEl.textContent = isEdit ? '海报已更新！正在跳转…' : '发布成功！正在跳转到你的海报页…';
       location.href = '/s/' + result.id;
     } catch (err) {
       statusEl.textContent = err.message || '发布失败。';
-    } finally {
-      publishBtn.disabled = false;
-    }
+    } finally { publishBtn.disabled = false; }
   });
 
-  // Init: carry over from /taste, or load ?edit=:id, or pre-select top 6 so preview looks alive immediately!
+  // Init
   renderHistory();
   const editId = new URLSearchParams(location.search).get('edit');
   if (editId) {
@@ -672,8 +722,7 @@
       }
     } catch {}
     if (!loaded && catalog.length) {
-      // Pre-select top 6 popular apps so visitors immediately see a gorgeous live poster preview!
-      for (const a of catalog.filter(x => !x.isSystem).slice(0, 6)) addApp(a);
+      for (const a of catalog.filter(x => !x.isSystem && x.icon).slice(0, 6)) addApp(a);
     }
   }
   syncCatalogHighlights();

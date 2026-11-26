@@ -321,14 +321,38 @@ test('need search, decision filters, free alternatives, community reviews, setup
   assert.match(cmpHtml, /只装 Raycast · 1/);
   assert.match(cmpHtml, /两款都装 · 1/);
 
-  // /studio renders 20 curated wallpapers and full catalog pick cards, and serves wallpaper WebP files
+  // /studio renders modal pickers, 4 fonts, watermark toggle, 20 wallpapers, 130+ preset apps & serves assets
   const studioHtml = await html('/studio');
-  assert.match(studioHtml, /20 张 Unsplash 精选/);
+  assert.match(studioHtml, /id="studio-apps-modal"/);
+  assert.match(studioHtml, /id="studio-bg-modal"/);
+  assert.match(studioHtml, /id="studio-style-modal"/);
+  assert.match(studioHtml, /id="studio-watermark-show"/);
+  assert.match(studioHtml, /data-font="smiley"/);
+  assert.match(studioHtml, /data-font="wenkai"/);
   assert.match(studioHtml, /data-wallpaper-url="\/wallpapers\/01-goldengate\.webp"/);
   assert.match(studioHtml, /data-catalog-key="raycast"/);
+  assert.match(studioHtml, /data-catalog-key="cursor"/);
+  assert.match(studioHtml, /data-catalog-key="ghostty"/);
+
   const wpRes = await page('/wallpapers/01-goldengate.webp');
   assert.equal(wpRes.status, 200);
   assert.equal(wpRes.headers.get('content-type'), 'image/webp');
   assert.match(wpRes.headers.get('cache-control'), /immutable/);
   assert.equal((await page('/wallpapers/..%2Fsite.css')).status, 404);
+
+  const fontRes = await page('/fonts/SmileySans-Oblique.otf');
+  assert.equal(fontRes.status, 200);
+  assert.equal(fontRes.headers.get('content-type'), 'font/otf');
+
+  // Verify source tracking ('web' vs 'skill') on share creation, share page & /api/v1/posters
+  const webRes = await post({
+    name: '网页玩家', title: '网页制作示例', visibility: 'public', source: 'web',
+    apps: [{ name: 'Cursor', group: 'AI 与开发' }], image: (await sharp({ create: { width: 640, height: 360, channels: 3, background: '#171a21' } }).png().toBuffer()).toString('base64'),
+  });
+  assert.equal(webRes.status, 201);
+  const webShare = await webRes.json();
+  assert.match(await html('/s/' + webShare.id), /网页制作/);
+  const postersApi = await (await page('/api/v1/posters')).json();
+  assert.equal(postersApi.items.find(p => p.id === webShare.id)?.source, 'web');
+  assert.ok(postersApi.items.some(p => p.source === 'skill'));
 });

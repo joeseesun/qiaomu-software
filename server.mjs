@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 import {
   AUDIT_SLOTS,
+  BUILTIN_APPS,
   BUILTIN_BUNDLE_TO_CANONICAL,
   BUILTIN_BY_KEY,
   FREE_ALTERNATIVES,
@@ -38,11 +39,18 @@ import {
 
 const directory = fileURLToPath(new URL('./public/', import.meta.url));
 const wallpapersDir = fileURLToPath(new URL('./public/wallpapers/', import.meta.url));
+const presetIconsDir = fileURLToPath(new URL('./public/preset-icons/', import.meta.url));
+const fontsDir = fileURLToPath(new URL('./public/fonts/', import.meta.url));
 const wallpapersList = (() => {
   try { return JSON.parse(readFileSync(new URL('./wallpapers.json', import.meta.url), 'utf8')); }
   catch { return []; }
 })();
+const presetIconsMap = (() => {
+  try { return JSON.parse(readFileSync(new URL('./preset-icons.json', import.meta.url), 'utf8')); }
+  catch { return {}; }
+})();
 const wallpaperFilePattern = /^\/wallpapers\/([a-z0-9-]+\.webp)$/;
+const fontFilePattern = /^\/fonts\/([A-Za-z0-9._-]+\.(?:otf|woff2|ttf))$/;
 const maxImage = 8 * 1024 * 1024;
 const maxIcon = 64 * 1024;
 const maxIconTotal = 1536 * 1024;
@@ -62,7 +70,7 @@ const media = new Map([
   ['/qiaomu-reward.png', 'image/png'],
   ['/qiaomu-follow.jpg', 'image/jpeg'],
 ]);
-const policy = "default-src 'none'; style-src 'self'; img-src 'self' blob: data:; script-src 'self' https://umami.qiaomu.ai; connect-src 'self' https://umami.qiaomu.ai; base-uri 'none'; frame-ancestors 'none'; form-action 'self'";
+const policy = "default-src 'none'; style-src 'self' https://fonts.googleapis.com https://fontsapi.zeoseven.com; font-src 'self' https://fonts.gstatic.com https://fontsapi.zeoseven.com; img-src 'self' blob: data:; script-src 'self' https://umami.qiaomu.ai; connect-src 'self' https://umami.qiaomu.ai; base-uri 'none'; frame-ancestors 'none'; form-action 'self'";
 const sha = (data) => createHash('sha256').update(data).digest('hex');
 const appKey = normalizeAppKey;
 const xmlEsc = (value) => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[ch]));
@@ -156,6 +164,7 @@ function sharePayload(input, { imageOptional = false } = {}) {
   const name = clean(input?.name, 40, '分享名');
   const title = clean(input?.title, 34, '标题');
   const role = cleanOptional(input?.role, 16, '角色标签');
+  const source = input?.source === 'web' ? 'web' : 'skill';
   const visibility = input?.visibility;
   if (!['link', 'public'].includes(visibility)) throw new RequestError(400, '请选择分享范围。');
   if (!Array.isArray(input?.apps) || input.apps.length < 1 || input.apps.length > 48) throw new RequestError(400, '请选择 1–48 款软件。');
@@ -171,7 +180,7 @@ function sharePayload(input, { imageOptional = false } = {}) {
   } else if (!imageOptional) {
     throw new RequestError(400, '图片编码无效。');
   }
-  return { name, title, role, visibility, appsList: apps, apps: JSON.stringify(apps), picture, icons };
+  return { name, title, role, source, visibility, appsList: apps, apps: JSON.stringify(apps), picture, icons };
 }
 
 async function encodeImages(picture) {
@@ -303,6 +312,7 @@ export function createSoftwareServer({
 
   const shareColumns = new Set(db.prepare('PRAGMA table_info(shares)').all().map(c => c.name));
   if (!shareColumns.has('role')) db.exec("ALTER TABLE shares ADD COLUMN role TEXT NOT NULL DEFAULT ''");
+  if (!shareColumns.has('source')) db.exec("ALTER TABLE shares ADD COLUMN source TEXT NOT NULL DEFAULT 'skill'");
 
   const mentionCols = new Set(db.prepare('PRAGMA table_info(app_mentions)').all().map(c => c.name));
   for (const column of ['note', 'icon', 'bundle']) {
@@ -408,13 +418,13 @@ export function createSoftwareServer({
 
   const stopSync = enableMetadataSync ? startMetadataSync(db, { now }) : () => {};
 
-  const summary = 'id,name,title,role,visibility,apps,width,height,created';
+  const summary = 'id,name,title,role,source,visibility,apps,width,height,created';
   const publicJoin = "JOIN shares AS s ON m.share_id=s.id AND s.visibility='public'";
   const getShare = db.prepare('SELECT ' + summary + ' FROM shares WHERE id=?');
   const getOwner = db.prepare('SELECT owner_hash,digest,visibility,width,height FROM shares WHERE id=?');
   const insert = db.prepare(`
-    INSERT INTO shares (id, owner_hash, digest, name, title, visibility, apps, width, height, image, thumbnail, created, role)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+    INSERT INTO shares (id, owner_hash, digest, name, title, visibility, apps, width, height, image, thumbnail, created, role, source)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `);
   const updateShareWithImage = db.prepare(`
     UPDATE shares SET digest=?, name=?, title=?, role=?, visibility=?, apps=?, width=?, height=?, image=?, thumbnail=?
@@ -426,6 +436,24 @@ export function createSoftwareServer({
   `);
   const hasIcon = db.prepare('SELECT 1 AS ok FROM icons WHERE hash=?');
   const insertIcon = db.prepare('INSERT OR IGNORE INTO icons (hash, data, created) VALUES (?,?,?)');
+  // Seed curated preset icons into content-addressed icons table so studio posters can reference them without re-uploading.
+  const presetEntries = Object.values(presetIconsMap);
+  if (presetEntries.length) {
+    const ts = now();
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      for (const hash of new Set(presetEntries)) {
+        if (!hashPattern.test(hash) || hasIcon.get(hash)) continue;
+        try {
+          const bytes = readFileSync(join(presetIconsDir, hash + '.webp'));
+          insertIcon.run(hash, bytes, ts);
+        } catch {}
+      }
+      db.exec('COMMIT');
+    } catch {
+      db.exec('ROLLBACK');
+    }
+  }
   const getIcon = db.prepare('SELECT data FROM icons WHERE hash=? AND blocked=0');
   const knownIcons = db.prepare('SELECT hash FROM icons WHERE hash IN (SELECT value FROM json_each(?))');
   const usableIcons = db.prepare('SELECT hash FROM icons WHERE blocked=0 AND hash IN (SELECT value FROM json_each(?))');
@@ -787,7 +815,7 @@ export function createSoftwareServer({
         key: k,
         name: live?.name ?? meta?.name ?? k,
         count: live?.count ?? 0,
-        icon: live?.icon ?? null,
+        icon: live?.icon || presetIconsMap[k] || null,
         inCatalog: Boolean(live),
         cask: meta?.cask ?? '',
         homepage: meta?.homepage ?? '',
@@ -911,7 +939,7 @@ export function createSoftwareServer({
         for (const [hash, webp] of icons) insertIcon.run(hash, webp, created);
         insert.run(
           id, ownerHash, digest, data.name, data.title, data.visibility, data.apps,
-          rendered.width, rendered.height, rendered.image, rendered.thumbnail, created, data.role
+          rendered.width, rendered.height, rendered.image, rendered.thumbnail, created, data.role, data.source
         );
         if (data.visibility === 'public') indexShareMentions(id, data.appsList);
         db.exec('COMMIT');
@@ -1358,13 +1386,44 @@ export function createSoftwareServer({
     }
 
     if (read && pathname === '/studio') {
-      const catalogApps = apps({ sort: 'top', limit: 200 });
+      const liveApps = apps({ sort: 'top', limit: 200 });
+      const themeToGroup = {
+        ai: 'AI 与开发', dev: 'AI 与开发', productivity: '效率与工具', notes: '写作与办公',
+        browser: '浏览与沟通', system: '效率与工具', media: '创作', design: '创作', chat: '浏览与沟通',
+      };
+      const merged = [];
+      const seenKeys = new Set();
+      for (const a of liveApps) {
+        seenKeys.add(a.key);
+        merged.push({ ...a, icon: a.icon || presetIconsMap[a.key] || '' });
+      }
+      for (const b of BUILTIN_APPS) {
+        if (b.system) continue;
+        const k = normalizeAppKey(b.name);
+        if (seenKeys.has(k)) continue;
+        seenKeys.add(k);
+        const firstTheme = b.themes?.[0] ?? '';
+        merged.push({
+          key: k,
+          name: b.name,
+          count: 0,
+          categories: [themeToGroup[firstTheme] ?? '效率与工具'],
+          themes: b.themes ?? [],
+          icon: presetIconsMap[k] || '',
+          summary: b.summary ?? '',
+          is_system: false,
+        });
+      }
+      const themeCounts = STANDARD_THEMES.map(t => ({
+        ...t,
+        count: merged.filter(a => (a.themes ?? []).includes(t.id)).length,
+      })).filter(t => t.count > 0);
       const cats = getCategories.all('').slice(0, 12).map(c => c.name);
       return page(studioPage({
         ...context,
-        catalogApps,
+        catalogApps: merged,
         wallpapers: wallpapersList,
-        themes: getThemeCounts(),
+        themes: themeCounts,
         categories: cats,
         roles: ROLES,
         stats: getStats.get(),
@@ -1391,6 +1450,18 @@ export function createSoftwareServer({
       return send(res, 200, 'application/xml; charset=utf-8',
         '<?xml version="1.0" encoding="utf-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' +
         links.map(link => '<url><loc>' + escape(origin + link) + '</loc></url>').join('') + '</urlset>');
+    }
+
+    const fontRoute = pathname.match(fontFilePattern);
+    if (read && fontRoute) {
+      try {
+        const data = readFileSync(join(fontsDir, fontRoute[1]));
+        const type = fontRoute[1].endsWith('.woff2') ? 'font/woff2' : fontRoute[1].endsWith('.ttf') ? 'font/ttf' : 'font/otf';
+        return send(res, 200, type, method === 'HEAD' ? '' : data, {
+          'cache-control': 'public, max-age=31536000, immutable',
+          'content-length': data.length,
+        });
+      } catch { throw new RequestError(404, '找不到这个字体文件。'); }
     }
 
     const wpRoute = pathname.match(wallpaperFilePattern);
@@ -1550,6 +1621,7 @@ export function createSoftwareServer({
         title: row.title,
         author: row.name,
         role: row.role || null,
+        source: row.source || 'skill',
         created: row.created,
         url: origin + '/s/' + row.id,
         image: origin + '/media/' + row.id + '.webp',
@@ -1583,7 +1655,7 @@ export function createSoftwareServer({
           key: resolved.key,
           name: live?.name ?? meta?.name ?? rawName,
           group,
-          icon: live?.icon ?? '',
+          icon: live?.icon || presetIconsMap[resolved.key] || '',
           isSystem: Boolean(meta?.is_system || meta?.system),
           inCatalog: Boolean(live),
         });
