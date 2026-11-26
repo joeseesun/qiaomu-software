@@ -2,11 +2,14 @@
 
 大家分享自己 Mac 上真正在用的软件的地方。每张海报来自一位用户的真实桌面，公开海报给其中每款软件投一票。
 
-- [首页](https://software.qiaomu.ai/)：最新海报、最近大家在推荐的软件、分类入口。
-- [海报](https://software.qiaomu.ai/posters)：按软件名、标题或作者查找，可按软件和分类筛选。
-- [软件榜](https://software.qiaomu.ai/apps)：总榜、最近升温（近 30 天）、新上榜三种排序，可按分类筛选。
-- 软件页 `/apps/:名称`：推荐它的海报数、大家写的推荐理由、常一起被推荐的软件。
-- 海报页 `/s/:id`：大图、按分类分组的清单（含图标和理由）、口味相近的海报。
+- [首页](https://software.qiaomu.ai/)：最新海报、最近大家在推荐的软件、走心推荐理由精选、按分类/身份找。
+- [海报](https://software.qiaomu.ai/posters)：按软件名、标题、身份标签或作者查找，可按软件、分类、身份与作者筛选。
+- [软件榜](https://software.qiaomu.ai/apps)：总榜、最近升温（近 30 天）、新上榜、小众宝藏四种排序，支持随机逛逛与一键加入本地装机清单。
+- [测品味](https://software.qiaomu.ai/taste)：勾选常用软件，测算撞款率、小众独特度，并匹配全站口味最像的真实桌面海报。
+- [网页制作](https://software.qiaomu.ai/studio)：无需安装工具，在浏览器里选壁纸并复用全站共识图标 30 秒合成海报，支持原地更新与撤回。
+- 软件页 `/apps/:名称`：推荐海报数、官网/App Store/Homebrew Cask 一键安装、大家的推荐理由（支持「写得好」投票）、常一起被推荐、同分类其他选择、动态 OG 分享图（`/og/apps/:名称.png`）与开发者可嵌入 SVG 徽章（`/badges/apps/:名称.svg`）。
+- 海报页 `/s/:id`：点击大图灯箱预览、带标题下载海报、一键复制文字清单、整张加入本地装机清单（导出 `brew install --cask` / `Brewfile` / Markdown）、口味相近的海报。
+- 订阅与开放接口：`/feed.xml`（RSS 2.0）与公开只读 JSON API（`/api/v1/apps`、`/api/v1/apps/:名称`、`/api/v1/posters`、`/api/v1/suggest`）。
 
 界面设计规范见 [DESIGN.md](DESIGN.md)。
 
