@@ -8,6 +8,17 @@ const VOTES_KEY = 'qiaomu_reason_votes_v1';
 const STUDIO_OWNED_KEY = 'qiaomu_studio_posters_v1';
 const TASTE_CARRY_KEY = 'qiaomu_taste_carry_v1';
 
+let toastTimer = null;
+function showToast(message) {
+  const el = document.getElementById('site-toast');
+  if (!el || !message) return;
+  el.textContent = message;
+  el.classList.add('is-show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('is-show'), 2200);
+}
+window.qiaomuToast = showToast;
+
 async function copy(text, button, doneText = '已复制') {
   if (button.dataset.busy) return;
   button.dataset.busy = '1';
@@ -397,6 +408,8 @@ function syncKitUI() {
     kitFab.hidden = kit.length === 0;
     kitFabCount.textContent = String(kit.length);
   }
+  const plusSvg = '<svg class="glyph" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>';
+  const checkSvg = '<svg class="glyph" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
   for (const btn of document.querySelectorAll('[data-kit-toggle]')) {
     try {
       const app = JSON.parse(btn.dataset.kitToggle);
@@ -404,7 +417,10 @@ function syncKitUI() {
       btn.setAttribute('aria-pressed', inKit ? 'true' : 'false');
       const span = btn.querySelector('span');
       if (span) span.textContent = inKit ? '已在装机清单' : '加入装机清单';
-      else btn.title = inKit ? '从装机清单移除' : '加入装机清单';
+      else {
+        btn.title = inKit ? '从装机清单移除' : '加入装机清单';
+        btn.innerHTML = inKit ? checkSvg : plusSvg;
+      }
     } catch {}
   }
   if (kitDialog?.open) renderKitDialog();
@@ -465,8 +481,13 @@ for (const btn of document.querySelectorAll('[data-kit-toggle]')) {
     const app = JSON.parse(btn.dataset.kitToggle);
     const kit = loadKit();
     const idx = kit.findIndex(x => x.key === app.key);
-    if (idx >= 0) kit.splice(idx, 1);
-    else kit.push(app);
+    if (idx >= 0) {
+      kit.splice(idx, 1);
+      showToast(`已移除 ${app.name}`);
+    } else {
+      kit.push(app);
+      showToast(`已将 ${app.name} 加入装机清单`);
+    }
     saveKit(kit);
     syncKitUI();
   });
@@ -586,7 +607,7 @@ if (setupRoot) {
       top.append(name);
       if (item.pricing) {
         const tag = document.createElement('span');
-        tag.className = 'mini-tag';
+        tag.className = 'mini-tag' + (item.pricing === '开源免费' ? ' is-foss' : '');
         tag.textContent = item.pricing;
         top.append(tag);
       }

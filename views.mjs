@@ -95,6 +95,7 @@ function appIcon(app, size = 'md') {
 }
 const quoted = (note) => note ? `「${esc(note)}」` : '';
 const kindLabels = { recommend: '体验点评', tip: '使用技巧', caveat: '避坑提醒' };
+const pricingTag = (pricing) => pricing ? `<span class="mini-tag${pricing === '开源免费' ? ' is-foss' : ''}">${esc(pricing)}</span>` : '';
 
 function kitButton(app, { label = false } = {}) {
   const payload = esc(JSON.stringify({
@@ -195,6 +196,7 @@ ${analytics}
   <img width="160" height="160" src="/qiaomu-reward.png" alt="向阳乔木打赏二维码" loading="lazy">
   <form method="dialog"><button type="submit" class="button secondary" autofocus>关闭</button></form>
 </dialog>
+<div id="site-toast" class="site-toast" role="status" aria-live="polite"></div>
 </body>
 </html>`;
 }
@@ -215,12 +217,13 @@ function posterCard(row, { compact = false } = {}) {
 }
 
 function appCard(app) {
-  const cats = (app.categories ?? []).slice(0, 2).map(esc).join(' · ');
-  const blurb = app.note ? quoted(app.note) : (app.summary ? esc(app.summary) : '');
+  const cat = (app.categories ?? [])[0] ? esc(app.categories[0]) : '';
+  const isQuote = Boolean(app.note);
+  const blurb = isQuote ? quoted(app.note) : (app.summary ? esc(app.summary) : '');
   return `<a class="app-card" href="${appHref(app.key)}">${appIcon(app, 'lg')}<span class="app-card-body">
-  <span class="app-card-top"><span class="app-card-name">${esc(app.name)}</span>${app.pricing ? `<span class="mini-tag">${esc(app.pricing)}</span>` : ''}</span>
-  <span class="app-card-meta">${num(app.count)} 张海报${cats ? `<span class="dot" aria-hidden="true">·</span>${cats}` : ''}</span>
-  ${blurb ? `<span class="app-card-note">${blurb}</span>` : ''}
+  <span class="app-card-top"><span class="app-card-name">${esc(app.name)}</span>${pricingTag(app.pricing)}</span>
+  <span class="app-card-meta">${num(app.count)} 张海报${cat ? `<span class="dot" aria-hidden="true">·</span>${cat}` : ''}</span>
+  ${blurb ? `<span class="app-card-note${isQuote ? ' is-quote' : ''}">${blurb}</span>` : ''}
 </span></a>`;
 }
 
@@ -395,7 +398,7 @@ export function appsPage({ origin, umamiId, apps = [], categories = [], themes =
       <div class="rank-main">
         <div class="rank-title-row">
           <h3><a href="${appHref(app.key)}">${esc(app.name)}</a></h3>
-          ${app.pricing ? `<span class="mini-tag">${esc(app.pricing)}</span>` : ''}
+          ${pricingTag(app.pricing)}
           ${app.cask ? '<span class="mini-tag is-brew">brew</span>' : ''}
         </div>
         ${(app.categories ?? []).length ? `<p class="rank-cats"><span class="sr">分类：</span>${app.categories.slice(0, 3).map(c => `<a href="${catUrl(c)}">${esc(c)}</a>`).join('')}</p>` : ''}
@@ -517,7 +520,7 @@ export function appPage({ origin, umamiId, app, categories = [], reasons = [], r
     <h2 id="free-alt-title">免费 / 开源平替</h2>
     <p class="section-sub">预算有限或偏好开源时的直接替代方案</p>
     <ul class="together">${freeAlternatives.map(a => `<li class="aside-row">
-      <a class="aside-main" href="${a.inCatalog ? appHref(a.key) : esc(a.homepage || '/apps?q=' + encodeURIComponent(a.name))}"${a.inCatalog ? '' : ' target="_blank" rel="noopener noreferrer"'}>${appIcon(a, 'md')}<span class="together-name"><strong>${esc(a.name)}</strong> <span class="mini-tag is-brew">${esc(a.pricing || '免费')}</span>${a.summary ? `<span class="aside-desc">${esc(a.summary)}</span>` : ''}</span></a>
+      <a class="aside-main" href="${a.inCatalog ? appHref(a.key) : esc(a.homepage || '/apps?q=' + encodeURIComponent(a.name))}"${a.inCatalog ? '' : ' target="_blank" rel="noopener noreferrer"'}>${appIcon(a, 'md')}<span class="together-name"><strong>${esc(a.name)}</strong> ${pricingTag(a.pricing || '免费')}${a.summary ? `<span class="aside-desc">${esc(a.summary)}</span>` : ''}</span></a>
       ${a.inCatalog ? `<a class="compare-mini" href="${href('/compare', { a: app.key, b: a.key })}" title="并排对比">对比</a>` : ''}
     </li>`).join('')}</ul>
   </section>` : '';
@@ -530,7 +533,7 @@ export function appPage({ origin, umamiId, app, categories = [], reasons = [], r
   <header class="app-hero">
     ${appIcon(app, 'xl')}
     <div class="app-hero-copy">
-      <div class="app-hero-title"><h1>${esc(app.name)}</h1>${app.pricing ? `<span class="pricing-pill">${esc(app.pricing)}</span>` : ''}</div>
+      <div class="app-hero-title"><h1>${esc(app.name)}</h1>${app.pricing ? `<span class="pricing-pill${app.pricing === '开源免费' ? ' is-foss' : ''}">${esc(app.pricing)}</span>` : ''}</div>
       ${app.summary ? `<p class="app-summary">${esc(app.summary)}</p>` : ''}
       <p class="app-hero-count">被 ${num(app.count)} 张公开海报推荐<span class="dot" aria-hidden="true">·</span>最早 ${esc(date.format(app.first))}</p>
       <ul class="app-cats">${categories.map(c => `<li><a href="${href('/apps', { category: c.name })}">${esc(c.name)}<span class="num">${esc(c.count)}</span></a></li>`).join('')}</ul>
@@ -550,7 +553,7 @@ export function appPage({ origin, umamiId, app, categories = [], reasons = [], r
       ${together.length ? `<section aria-labelledby="together-title"><h2 id="together-title">常一起被推荐</h2><p class="section-sub">和 ${esc(app.name)} 出现在同一张海报的次数</p>
         <ul class="together">${together.map(t => `<li><a href="${appHref(t.key)}">${appIcon(t, 'md')}<span class="together-name">${esc(t.name)}</span><span class="together-count">${num(t.count)}</span></a></li>`).join('')}</ul></section>` : ''}
       ${alternatives.length ? `<section class="alt-section" aria-labelledby="alt-title"><h2 id="alt-title">同分类其他选择</h2><p class="section-sub">在同类场景下大家还推荐了这些软件</p>
-        <ul class="together">${alternatives.map(a => `<li class="aside-row"><a class="aside-main" href="${appHref(a.key)}">${appIcon(a, 'md')}<span class="together-name">${esc(a.name)}${a.pricing ? ` <span class="mini-tag">${esc(a.pricing)}</span>` : ''}</span><span class="together-count">${num(a.count)}</span></a><a class="compare-mini" href="${href('/compare', { a: app.key, b: a.key })}">对比</a></li>`).join('')}</ul></section>` : ''}
+        <ul class="together">${alternatives.map(a => `<li class="aside-row"><a class="aside-main" href="${appHref(a.key)}">${appIcon(a, 'md')}<span class="together-name">${esc(a.name)}${a.pricing ? ` ${pricingTag(a.pricing)}` : ''}</span><span class="together-count">${num(a.count)}</span></a><a class="compare-mini" href="${href('/compare', { a: app.key, b: a.key })}">对比</a></li>`).join('')}</ul></section>` : ''}
     </aside>
   </div>
   <section class="app-posters" aria-labelledby="posters-title">
@@ -612,7 +615,13 @@ export function setupPage({ origin, umamiId, packs = [], stats }) {
       <div class="studio-card">
         <h2>一键终端装机命令</h2>
         <p class="kit-sub">自动检测是否已安装 Homebrew，再批量安装已选的支持 Cask 的软件。</p>
-        <div class="command"><span class="command-prompt" aria-hidden="true">$</span><code id="setup-oneliner"></code><button type="button" class="button primary small" id="setup-copy-cmd">${glyph('copy')}复制命令</button></div>
+        <div class="command-terminal">
+          <div class="command-terminal-bar">
+            <span>macOS Terminal · bash / zsh</span>
+            <button type="button" class="button primary small" id="setup-copy-cmd">${glyph('copy')}复制命令</button>
+          </div>
+          <pre><code id="setup-oneliner"></code></pre>
+        </div>
         <div class="actions">
           <button type="button" class="button secondary small" id="setup-download-sh">${glyph('download')}下载 setup-mac.sh</button>
           <button type="button" class="button secondary small" id="setup-download-brewfile">${glyph('download')}下载 Brewfile</button>
@@ -675,9 +684,9 @@ export function comparePage({ origin, umamiId, sideA, sideB, overlap, topChoices
     <h2>真实桌面怎么选？</h2>
     <p class="kit-sub">统计全站推荐了这两款软件的 ${num(totalOverlap)} 张公开海报：</p>
     <div class="overlap-bar" role="img" aria-label="只用 ${esc(sideA.name)} ${overlap.only_a} 张，两款都用 ${overlap.both} 张，只用 ${esc(sideB.name)} ${overlap.only_b} 张">
-      ${overlap.only_a > 0 ? `<span class="ov-a" style="flex:${overlap.only_a}">只装 ${esc(sideA.name)} · ${overlap.only_a}</span>` : ''}
-      ${overlap.both > 0 ? `<span class="ov-both" style="flex:${overlap.both}">两款都装 · ${overlap.both}</span>` : ''}
-      ${overlap.only_b > 0 ? `<span class="ov-b" style="flex:${overlap.only_b}">只装 ${esc(sideB.name)} · ${overlap.only_b}</span>` : ''}
+      ${overlap.only_a > 0 ? `<span class="ov-a" style="flex:${overlap.only_a} 1 0%">只装 ${esc(sideA.name)} · ${overlap.only_a}</span>` : ''}
+      ${overlap.both > 0 ? `<span class="ov-both" style="flex:${overlap.both} 1 0%">两款都装 · ${overlap.both}</span>` : ''}
+      ${overlap.only_b > 0 ? `<span class="ov-b" style="flex:${overlap.only_b} 1 0%">只装 ${esc(sideB.name)} · ${overlap.only_b}</span>` : ''}
     </div>
   </section>` : '';
 
@@ -802,7 +811,7 @@ export function tastePage({ origin, umamiId, topApps = [], stats }) {
       <div class="command command-compact"><span class="command-prompt" aria-hidden="true">$</span><code id="taste-scan-cmd">${esc(scanCmd)}</code><button type="button" class="button secondary small" data-copy="taste-scan-cmd">${glyph('copy')}复制命令</button></div>
     </div>
     <div class="paste-import-body">
-      <textarea id="taste-paste" rows="3" placeholder="把终端输出的软件名粘贴到这里，每行一个，例如：&#10;Raycast&#10;Cursor&#10;Obsidian"></textarea>
+      <textarea id="taste-paste" rows="4" placeholder="把终端输出的软件名粘贴到这里，每行一个，例如：&#10;Raycast&#10;Cursor&#10;Obsidian"></textarea>
       <button type="button" class="button primary" id="taste-paste-run">${glyph('zap')}1 秒识别并开始体检</button>
     </div>
   </div>

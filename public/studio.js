@@ -447,7 +447,7 @@
     }
   }
 
-  async function selectWallpaper(url, name, tileBtn = null) {
+  async function selectWallpaper(url, name, tileBtn = null, silent = false) {
     activeWallpaperUrl = url;
     bgImage = await loadImage(url, wallpaperCache);
     if (bgLabelEl && name) bgLabelEl.textContent = name;
@@ -457,6 +457,7 @@
       other.setAttribute('aria-pressed', on ? 'true' : 'false');
     }
     renderPoster();
+    if (!silent && name) window.qiaomuToast?.(`已切换壁纸「${name}」`);
   }
 
   // Modal openers
@@ -544,9 +545,9 @@
         other.classList.toggle('is-active', on);
         other.setAttribute('aria-pressed', on ? 'true' : 'false');
       }
-      statusEl.textContent = '正在应用字体…';
+      window.qiaomuToast?.('正在应用字体…');
       await renderPoster();
-      statusEl.textContent = '';
+      window.qiaomuToast?.(`已切换为「${btn.querySelector('strong')?.textContent || '新字体'}」`);
     });
   }
   [titleInput, nameInput, roleInput, watermarkInput].forEach(el => el?.addEventListener('input', renderPoster));
@@ -654,6 +655,7 @@
     const prefix = nameInput.value.trim() ? nameInput.value.trim() + '-' : '';
     a.download = prefix + (titleInput.value.trim() || 'mac-software') + '.png';
     a.click();
+    window.qiaomuToast?.('已下载高清海报 PNG');
   });
 
   publishBtn?.addEventListener('click', async () => {
