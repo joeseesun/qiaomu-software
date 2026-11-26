@@ -1072,3 +1072,9 @@ if (tasteRoot) {
     resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 }
+
+// CSP-safe proportional flex widths (e.g. /compare overlap bar)
+for (const el of document.querySelectorAll('[data-flex]')) {
+  const w = Number(el.dataset.flex);
+  if (w > 0) el.style.flex = `${w} 1 0%`;
+}

@@ -684,9 +684,9 @@ export function comparePage({ origin, umamiId, sideA, sideB, overlap, topChoices
     <h2>真实桌面怎么选？</h2>
     <p class="kit-sub">统计全站推荐了这两款软件的 ${num(totalOverlap)} 张公开海报：</p>
     <div class="overlap-bar" role="img" aria-label="只用 ${esc(sideA.name)} ${overlap.only_a} 张，两款都用 ${overlap.both} 张，只用 ${esc(sideB.name)} ${overlap.only_b} 张">
-      ${overlap.only_a > 0 ? `<span class="ov-a" style="flex:${overlap.only_a} 1 0%">只装 ${esc(sideA.name)} · ${overlap.only_a}</span>` : ''}
-      ${overlap.both > 0 ? `<span class="ov-both" style="flex:${overlap.both} 1 0%">两款都装 · ${overlap.both}</span>` : ''}
-      ${overlap.only_b > 0 ? `<span class="ov-b" style="flex:${overlap.only_b} 1 0%">只装 ${esc(sideB.name)} · ${overlap.only_b}</span>` : ''}
+      ${overlap.only_a > 0 ? `<span class="ov-a" data-flex="${overlap.only_a}">只装 ${esc(sideA.name)} · ${overlap.only_a}</span>` : ''}
+      ${overlap.both > 0 ? `<span class="ov-both" data-flex="${overlap.both}">两款都装 · ${overlap.both}</span>` : ''}
+      ${overlap.only_b > 0 ? `<span class="ov-b" data-flex="${overlap.only_b}">只装 ${esc(sideB.name)} · ${overlap.only_b}</span>` : ''}
     </div>
   </section>` : '';
 
