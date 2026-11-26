@@ -385,40 +385,47 @@ function makeBand() {
 </section>`;
 }
 
-export function galleryPage({ origin, umamiId, shares, q = '', app = '', category = '', role = '', author = '', roles = [], page = 1, stats }) {
-  const filtered = Boolean(q || app || category || role || author);
+export function galleryPage({ origin, umamiId, shares, q = '', app = '', category = '', role = '', author = '', source = '', roles = [], page = 1, stats }) {
+  const filtered = Boolean(q || app || category || role || author || source);
+  const sourceLabels = { skill: 'Mac 本机扫描', web: '网页制作' };
   const chips = [
-    author ? chip('作者', author, href('/posters', { q, app, category, role })) : '',
-    role ? chip('身份', role, href('/posters', { q, app, category, author })) : '',
-    app ? chip('软件', app, href('/posters', { q, category, role, author })) : '',
-    category ? chip('分类', category, href('/posters', { q, app, role, author })) : '',
-    q ? chip('搜索', q, href('/posters', { app, category, role, author })) : '',
+    author ? chip('作者', author, href('/posters', { q, app, category, role, source })) : '',
+    role ? chip('身份', role, href('/posters', { q, app, category, author, source })) : '',
+    source ? chip('来源', sourceLabels[source], href('/posters', { q, app, category, role, author })) : '',
+    app ? chip('软件', app, href('/posters', { q, category, role, author, source })) : '',
+    category ? chip('分类', category, href('/posters', { q, app, role, author, source })) : '',
+    q ? chip('搜索', q, href('/posters', { app, category, role, author, source })) : '',
   ].filter(Boolean);
   const empty = filtered || page > 1 ?
     `<div class="empty-note"><h3>没有匹配的海报</h3><p>换个软件名、作者名、身份或海报标题试试，也可以去软件榜按分类找。</p><p class="empty-links"><a class="text-link" href="/posters">查看全部海报${glyph('arrow')}</a><a class="text-link" href="/apps">软件榜${glyph('arrow')}</a></p></div>` :
     `<div class="empty-note"><h3>还没有公开海报</h3><p>发布时选择「发布到画廊」，海报就会出现在这里。</p><a class="text-link" href="/studio">做第一张海报${glyph('arrow')}</a></div>`;
   const heading = author ? `${author} 的推荐海报` : '推荐海报';
   const roleBar = roles.length ? `<ul class="role-bar" aria-label="按身份筛选">
-    <li><a href="${href('/posters', { q, app, category, author })}"${role ? '' : ' aria-current="page"'}>全部身份</a></li>
-    ${roles.map(r => `<li><a href="${href('/posters', { q, app, category, author, role: r.name })}"${r.name === role ? ' aria-current="page"' : ''}>${esc(r.name)} ${num(r.count)}</a></li>`).join('')}
+    <li><a href="${href('/posters', { q, app, category, author, source })}"${role ? '' : ' aria-current="page"'}>全部身份</a></li>
+    ${roles.map(r => `<li><a href="${href('/posters', { q, app, category, author, source, role: r.name })}"${r.name === role ? ' aria-current="page"' : ''}>${esc(r.name)} ${num(r.count)}</a></li>`).join('')}
   </ul>` : '';
+  const sourceNav = `<nav class="segmented" aria-label="按制作来源筛选">
+    <a href="${href('/posters', { q, app, category, role, author })}"${source === '' ? ' aria-current="true"' : ''}>全部来源</a>
+    <a href="${href('/posters', { q, app, category, role, author, source: 'skill' })}"${source === 'skill' ? ' aria-current="true"' : ''}>Mac 本机扫描</a>
+    <a href="${href('/posters', { q, app, category, role, author, source: 'web' })}"${source === 'web' ? ' aria-current="true"' : ''}>网页制作</a>
+  </nav>`;
   return frame({
     title: heading, origin, umamiId, path: '/posters', current: 'posters', hidden: Boolean(filtered || page !== 1),
     description: '大家公开分享的 Mac 软件推荐海报，可以按软件、作者、身份或标题查找。', main: `
 <section class="shell page-head">
   <div><h1>${esc(heading)}</h1><p class="lede">${author ? `共找到这位作者公开发布的 Mac 软件推荐海报。` : '每一张都来自一位用户自己的 Mac：真实壁纸、真实图标、亲手挑的软件。'}</p>${statLine(stats)}</div>
-  <form class="search" role="search" action="/posters"><label for="posters-q">搜索海报</label><div class="search-row"><input id="posters-q" type="search" name="q" maxlength="60" value="${esc(q)}" placeholder="软件名、作者或标题" autocomplete="off">${app ? `<input type="hidden" name="app" value="${esc(app)}">` : ''}${category ? `<input type="hidden" name="category" value="${esc(category)}">` : ''}${role ? `<input type="hidden" name="role" value="${esc(role)}">` : ''}${author ? `<input type="hidden" name="author" value="${esc(author)}">` : ''}<button type="submit" class="button primary">${glyph('search')}搜索</button></div></form>
+  <form class="search" role="search" action="/posters"><label for="posters-q">搜索海报</label><div class="search-row"><input id="posters-q" type="search" name="q" maxlength="60" value="${esc(q)}" placeholder="软件名、作者或标题" autocomplete="off">${app ? `<input type="hidden" name="app" value="${esc(app)}">` : ''}${category ? `<input type="hidden" name="category" value="${esc(category)}">` : ''}${role ? `<input type="hidden" name="role" value="${esc(role)}">` : ''}${author ? `<input type="hidden" name="author" value="${esc(author)}">` : ''}${source ? `<input type="hidden" name="source" value="${esc(source)}">` : ''}<button type="submit" class="button primary">${glyph('search')}搜索</button></div></form>
 </section>
 <section class="shell section-tight" aria-label="海报列表">
-  ${roleBar}
+  <div class="posters-toolbar">${roleBar}${sourceNav}</div>
   ${chips.length ? `<div class="filters" role="group" aria-label="当前筛选">${chips.join('')}${chips.length > 1 ? '<a class="text-link" href="/posters">全部清除</a>' : ''}</div>` : ''}
   ${shares.length ? `<div class="poster-grid">${shares.slice(0, 24).map(row => posterCard(row)).join('')}</div>` : empty}
-  ${pager(page, shares.length > 24 && page < 167, number => href('/posters', { q, app, category, role, author, page: number }))}
+  ${pager(page, shares.length > 24 && page < 167, number => href('/posters', { q, app, category, role, author, source, page: number }))}
 </section>`,
   });
 }
 
-export function appsPage({ origin, umamiId, apps = [], categories = [], themes = [], q = '', category = '', theme = '', pricing = '', brew = false, hideSystem = false, sort = 'top', page = 1, hasNext = false, stats }) {
+export function appsPage({ origin, umamiId, apps = [], curatedMatches = [], categories = [], themes = [], q = '', category = '', theme = '', pricing = '', brew = false, hideSystem = false, sort = 'top', page = 1, hasNext = false, stats }) {
   const filtered = Boolean(q || category || theme || pricing || brew || hideSystem || sort !== 'top');
   const sorts = [['top', '总榜'], ['rising', '最近升温'], ['new', '新上榜'], ['gems', '小众宝藏']];
   const baseParams = (override = {}) => ({
@@ -554,7 +561,14 @@ export function appsPage({ origin, umamiId, apps = [], categories = [], themes =
     </div>
     ${chips.length ? `<div class="filters" role="group" aria-label="当前筛选">${chips.join('')}${chips.length > 1 ? '<a class="text-link" href="/apps">全部清除</a>' : ''}</div>` : ''}
     ${sortNotes[sort] ? `<p class="index-note">${sortNotes[sort]}</p>` : ''}
-    ${apps.length ? `<ol class="rank-list">${apps.map(row).join('')}</ol>` : empty}
+    ${apps.length ? `<ol class="rank-list">${apps.map(row).join('')}</ol>` : (curatedMatches.length ? '' : empty)}
+    ${curatedMatches.length ? `<section class="curated-supplement" aria-labelledby="curated-title">
+      <div class="section-head"><div><h3 id="curated-title">站内精选收录（等你投出第 1 票）</h3><p>这些热门软件已收录真实图标与信息，暂未有人放进公开海报</p></div></div>
+      <div class="curated-grid">${curatedMatches.map(a => `<div class="curated-card">
+        <a class="curated-card-main" href="${appHref(a.key)}">${appIcon(a, 'md')}<div class="curated-card-body"><strong>${esc(a.name)} ${pricingTag(a.pricing)}${a.cask ? ' <span class="mini-tag is-brew">brew</span>' : ''}</strong>${a.summary ? `<p>${esc(a.summary)}</p>` : ''}</div></a>
+        <a class="button secondary small" href="/studio?add=${encodeURIComponent(a.key)}">${glyph('plus')}投第 1 票</a>
+      </div>`).join('')}</div>
+    </section>` : ''}
     ${pager(page, hasNext, number => href('/apps', baseParams({ page: number })))}
   </section>
 </div>`,
@@ -1153,8 +1167,9 @@ export function studioPage({ origin, umamiId, catalogApps = [], wallpapers = [],
   </header>
 
   <div class="studio-stage-card">
-    <div class="studio-canvas-wrap">
+    <div class="studio-canvas-wrap" id="studio-dropzone">
       <canvas id="studio-canvas" width="1600" height="900" aria-label="软件推荐海报实时预览"></canvas>
+      <div class="studio-drop-overlay" aria-hidden="true"><span>${glyph('upload')}松开即可设为海报壁纸</span></div>
     </div>
 
     <div class="studio-dock">
@@ -1176,6 +1191,7 @@ export function studioPage({ origin, umamiId, catalogApps = [], wallpapers = [],
     </div>
     <p id="studio-status" class="studio-status" role="status"></p>
   </div>
+  <p class="studio-hints"><span>拖拽或 <kbd>⌘V</kbd> 粘贴图片可直换壁纸</span><span class="dot" aria-hidden="true">·</span><span>按 <kbd>R</kbd> 随机换壁纸</span><span class="dot" aria-hidden="true">·</span><span><kbd>⌘S</kbd> 下载高清图</span></p>
 
   <div class="studio-card" id="studio-history-card" hidden>
     <h2>本机发布过的海报</h2>
@@ -1246,9 +1262,10 @@ export function studioPage({ origin, umamiId, catalogApps = [], wallpapers = [],
       </div>
     </div>
     <div class="modal-scrim-row">
-      <span class="kit-sub">背景暗度：</span>
+      <span class="kit-sub">背景质感：</span>
       <button type="button" class="filter-pill is-on" data-scrim="desktop">标准通透</button>
       <button type="button" class="filter-pill" data-scrim="night">深邃暗夜</button>
+      <button type="button" class="filter-pill" data-scrim="blur">柔焦景深</button>
     </div>
     <ul class="wallpaper-grid" id="studio-wallpaper-grid">
       ${wallpapers.map((wp, idx) => `<li><button type="button" class="wallpaper-tile${idx === 0 ? ' is-active' : ''}" data-wallpaper-url="${esc(wp.url)}" data-wallpaper-name="${esc(wp.name)}" data-wallpaper-id="${esc(wp.id)}" aria-pressed="${idx === 0 ? 'true' : 'false'}">
@@ -1301,6 +1318,9 @@ export function studioPage({ origin, umamiId, catalogApps = [], wallpapers = [],
         <input type="checkbox" id="studio-watermark-show" checked>
         <span>显示右下角水印（取消勾选可完全隐藏）</span>
       </label>
+      <div class="style-modal-actions">
+        <button type="button" class="button secondary small" id="studio-copy-caption">${glyph('list')}一键复制社交分享配文</button>
+      </div>
     </div>
   </dialog>
 

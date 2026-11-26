@@ -725,11 +725,12 @@ export function createSoftwareServer({
       ))
       AND (?='' OR role=?)
       AND (?='' OR lower(name)=lower(?))
+      AND (?='' OR source=?)
     ORDER BY created DESC,id DESC LIMIT ? OFFSET ?
   `);
-  const gallery = ({ q = '', app = '', category = '', role = '', author = '', limit = 25, offset = 0 } = {}) => {
+  const gallery = ({ q = '', app = '', category = '', role = '', author = '', source = '', limit = 25, offset = 0 } = {}) => {
     const resolvedApp = app ? resolveCanonicalKey(app) : '';
-    return getGallery.all(q, q, q, q, q, q, resolvedApp, category, resolvedApp, resolvedApp, category, category, role, role, author, author, limit, offset);
+    return getGallery.all(q, q, q, q, q, q, resolvedApp, category, resolvedApp, resolvedApp, category, category, role, role, author, author, source, source, limit, offset);
   };
 
   const suggestCategories = db.prepare(`
@@ -1278,8 +1279,9 @@ export function createSoftwareServer({
       const category = search('category', 14);
       const role = search('role', 16);
       const author = search('author', 40);
+      const source = ['skill', 'web'].includes(url.searchParams.get('source')) ? url.searchParams.get('source') : '';
       const number = pageNumber(167);
-      const shares = withIcons(gallery({ q, app, category, role, author, offset: (number - 1) * 24 }));
+      const shares = withIcons(gallery({ q, app, category, role, author, source, offset: (number - 1) * 24 }));
       return page(galleryPage({
         ...context,
         shares,
@@ -1288,6 +1290,7 @@ export function createSoftwareServer({
         category,
         role,
         author,
+        source,
         roles: getRoles.all(),
         page: number,
         stats: getStats.get(),
@@ -1304,9 +1307,39 @@ export function createSoftwareServer({
       const sort = ['top', 'rising', 'new', 'gems'].includes(url.searchParams.get('sort')) ? url.searchParams.get('sort') : 'top';
       const number = pageNumber(8000);
       const items = apps({ q, category, theme, pricing, brew, hideSystem, sort, limit: 25, offset: (number - 1) * 24 });
+      const shown = items.slice(0, 24);
+      const curatedMatches = [];
+      if (number === 1 && !category && (q || theme || pricing || brew)) {
+        const seen = new Set(shown.map(a => a.key));
+        const ql = q.toLowerCase();
+        for (const b of BUILTIN_APPS) {
+          if (b.system || curatedMatches.length >= 12) continue;
+          const k = normalizeAppKey(b.name);
+          if (seen.has(k) || getApp.get(k)) continue;
+          if (theme && !(b.themes ?? []).includes(theme)) continue;
+          if (brew && !b.cask) continue;
+          if (pricing === 'foss' && b.pricing !== '开源免费') continue;
+          if (pricing === 'free' && !['开源免费', '免费', '免费增值'].includes(b.pricing)) continue;
+          if (pricing === 'paid' && !String(b.pricing || '').includes('付费') && !String(b.pricing || '').includes('Setapp')) continue;
+          if (ql) {
+            const hay = [k, b.name, ...(b.aliases ?? []), b.keywords ?? '', b.summary ?? ''].join(' ').toLowerCase();
+            if (!hay.includes(ql)) continue;
+          }
+          seen.add(k);
+          curatedMatches.push({
+            key: k,
+            name: b.name,
+            icon: presetIconsMap[k] || null,
+            pricing: b.pricing || '',
+            cask: b.cask || '',
+            summary: b.summary || '',
+          });
+        }
+      }
       return page(appsPage({
         ...context,
-        apps: items.slice(0, 24),
+        apps: shown,
+        curatedMatches,
         categories: getCategories.all(category),
         themes: getThemeCounts({ hideSystem }),
         q,

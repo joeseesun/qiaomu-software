@@ -313,10 +313,20 @@
     ctx.fillRect(0, 0, W, H);
 
     if (bgImage) {
-      drawCover(bgImage, W, H);
-      const isNight = activeScrim === 'night';
-      ctx.fillStyle = `rgba(10, 18, 28, ${isNight ? 0.56 : 0.30})`;
-      ctx.fillRect(0, 0, W, H);
+      if (activeScrim === 'blur') {
+        ctx.save();
+        ctx.filter = 'blur(12px) brightness(0.84) saturate(1.12)';
+        ctx.translate(-20, -20);
+        drawCover(bgImage, W + 40, H + 40);
+        ctx.restore();
+        ctx.fillStyle = 'rgba(10, 16, 26, 0.34)';
+        ctx.fillRect(0, 0, W, H);
+      } else {
+        drawCover(bgImage, W, H);
+        const isNight = activeScrim === 'night';
+        ctx.fillStyle = `rgba(10, 18, 28, ${isNight ? 0.56 : 0.30})`;
+        ctx.fillRect(0, 0, W, H);
+      }
 
       const leftGrad = ctx.createLinearGradient(0, 0, W, 0);
       leftGrad.addColorStop(0, 'rgba(10, 18, 33, 0.42)');
@@ -530,6 +540,30 @@
       }
       const name = document.createElement('strong');
       name.textContent = app.name;
+      const moveUp = document.createElement('button');
+      moveUp.type = 'button';
+      moveUp.className = 'button secondary small';
+      moveUp.textContent = '↑';
+      moveUp.title = '前移';
+      moveUp.disabled = idx === 0;
+      moveUp.addEventListener('click', () => {
+        if (idx <= 0) return;
+        [selectedApps[idx - 1], selectedApps[idx]] = [selectedApps[idx], selectedApps[idx - 1]];
+        syncCatalogHighlights();
+        renderPoster();
+      });
+      const moveDown = document.createElement('button');
+      moveDown.type = 'button';
+      moveDown.className = 'button secondary small';
+      moveDown.textContent = '↓';
+      moveDown.title = '后移';
+      moveDown.disabled = idx === selectedApps.length - 1;
+      moveDown.addEventListener('click', () => {
+        if (idx >= selectedApps.length - 1) return;
+        [selectedApps[idx], selectedApps[idx + 1]] = [selectedApps[idx + 1], selectedApps[idx]];
+        syncCatalogHighlights();
+        renderPoster();
+      });
       const rm = document.createElement('button');
       rm.type = 'button';
       rm.className = 'button secondary small';
@@ -539,7 +573,7 @@
         syncCatalogHighlights();
         renderPoster();
       });
-      top.append(name, rm);
+      top.append(name, moveUp, moveDown, rm);
 
       const controls = document.createElement('div');
       controls.className = 'studio-app-controls';
@@ -715,20 +749,86 @@
       shuffleWallpaper();
     }
   });
-  bgFileInput?.addEventListener('change', async () => {
-    const file = bgFileInput.files?.[0];
-    if (!file) return;
+  const applyLocalWallpaperFile = async (file, label = '自定义壁纸') => {
+    if (!file || !file.type.startsWith('image/')) return;
     try {
       bgImage = await createImageBitmap(file);
       activeWallpaperUrl = '';
-      if (bgLabelEl) bgLabelEl.textContent = '自定义壁纸';
+      if (bgLabelEl) bgLabelEl.textContent = label;
       for (const other of document.querySelectorAll('[data-wallpaper-url]')) {
         other.classList.remove('is-active');
         other.setAttribute('aria-pressed', 'false');
       }
       renderPoster();
+      window.qiaomuToast?.(`已应用${label}`);
     } catch {
       statusEl.textContent = '无法读取该图片，请换一张 JPG/PNG/WebP 壁纸。';
+    }
+  };
+  bgFileInput?.addEventListener('change', () => applyLocalWallpaperFile(bgFileInput.files?.[0]));
+
+  // Drag & drop local image onto poster canvas to set wallpaper
+  const dropzone = document.getElementById('studio-dropzone');
+  if (dropzone) {
+    let dragDepth = 0;
+    dropzone.addEventListener('dragenter', (e) => {
+      if (!e.dataTransfer?.types?.includes('Files')) return;
+      e.preventDefault();
+      dragDepth++;
+      dropzone.classList.add('is-dragover');
+    });
+    dropzone.addEventListener('dragover', (e) => {
+      if (!e.dataTransfer?.types?.includes('Files')) return;
+      e.preventDefault();
+    });
+    dropzone.addEventListener('dragleave', () => {
+      dragDepth = Math.max(0, dragDepth - 1);
+      if (!dragDepth) dropzone.classList.remove('is-dragover');
+    });
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dragDepth = 0;
+      dropzone.classList.remove('is-dragover');
+      const file = [...(e.dataTransfer?.files || [])].find(f => f.type.startsWith('image/'));
+      if (file) applyLocalWallpaperFile(file, '拖入壁纸');
+    });
+  }
+
+  // Paste clipboard image (`⌘V`) anywhere on /studio to set wallpaper
+  document.addEventListener('paste', (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type?.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) {
+          e.preventDefault();
+          applyLocalWallpaperFile(file, '粘贴壁纸');
+          return;
+        }
+      }
+    }
+  });
+
+  // Copy social caption (Xiaohongshu / X / WeChat Moments)
+  document.getElementById('studio-copy-caption')?.addEventListener('click', async () => {
+    if (!selectedApps.length) { appsModal?.showModal(); return; }
+    const groups = new Map();
+    for (const a of selectedApps) {
+      const g = a.group || '效率与工具';
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g).push(a);
+    }
+    const lines = [resolveTitle(), ''];
+    for (const [g, list] of groups) {
+      lines.push(`【${g}】${list.map(x => x.name).join(' · ')}`);
+    }
+    lines.push('', `共 ${selectedApps.length} 款真正在用的 Mac 主力软件，在线同款制作：${location.origin}/studio`, '#Mac软件推荐 #效率工具 #AI工具');
+    try {
+      await navigator.clipboard.writeText(lines.join('\n'));
+      window.qiaomuToast?.('分享配文已复制，发小红书 / 朋友圈 / X 直接粘贴');
+    } catch {
+      window.qiaomuToast?.('复制失败，请检查浏览器剪贴板权限');
     }
   });
 
@@ -960,7 +1060,7 @@
             other.setAttribute('aria-pressed', on ? 'true' : 'false');
           }
         }
-        if (draft.scrim === 'night' || draft.scrim === 'desktop') {
+        if (draft.scrim === 'night' || draft.scrim === 'desktop' || draft.scrim === 'blur') {
           activeScrim = draft.scrim;
           for (const other of document.querySelectorAll('[data-scrim]')) other.classList.toggle('is-on', other.dataset.scrim === activeScrim);
         }

@@ -419,14 +419,32 @@ input[type="search"]::-webkit-search-decoration { -webkit-appearance: none; }
 .taste-similar-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 16px; }
 
 /* Web Poster Studio v3 (Above-the-Fold Viewport-Fit Canvas Stage + Modal Pickers) */
-.studio-v3 { display: grid; gap: 10px; padding-block: 12px 36px; max-width: min(1180px, max(880px, calc((100dvh - 216px) * 16 / 9 + 28px))); }
+.studio-v3 { display: grid; gap: 10px; padding-block: 12px 32px; max-width: min(1180px, max(880px, calc((100dvh - 236px) * 16 / 9 + 28px))); }
 .studio-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 6px 20px; }
 .studio-top-left { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; }
 .studio-top h1 { font-size: clamp(1.3rem, 2.2vw, 1.65rem); line-height: 1.2; }
 .studio-sub { color: var(--text-2); font-size: .88rem; }
 .studio-skill-link { font-size: .86rem; }
 .studio-stage-card { display: grid; gap: 12px; padding: 14px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--card-shadow); }
-.studio-canvas-wrap { border-radius: 10px; overflow: hidden; background: var(--bg); border: 1px solid var(--line-strong); box-shadow: 0 20px 56px rgb(0 0 0 / .5), inset 0 0 0 1px rgb(255 255 255 / .06); }
+.studio-canvas-wrap { position: relative; border-radius: 10px; overflow: hidden; background: var(--bg); border: 1px solid var(--line-strong); box-shadow: 0 20px 56px rgb(0 0 0 / .5), inset 0 0 0 1px rgb(255 255 255 / .06); }
+.studio-drop-overlay { position: absolute; inset: 0; display: grid; place-items: center; background: rgb(11 13 17 / .78); backdrop-filter: blur(8px); border: 2px dashed var(--amber); border-radius: inherit; opacity: 0; pointer-events: none; transition: opacity .15s; }
+.studio-drop-overlay span { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: 999px; background: var(--amber); color: var(--amber-ink); font-weight: 600; font-size: .95rem; }
+.studio-canvas-wrap.is-dragover .studio-drop-overlay { opacity: 1; }
+.studio-hints { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 2px 6px; color: var(--text-2); font-size: .78rem; opacity: .78; }
+.studio-hints kbd { padding: 1px 5px; border-radius: 4px; background: rgb(255 255 255 / .08); border: 1px solid var(--line); font-size: .72rem; color: var(--text); }
+.style-modal-actions { padding-top: 6px; border-top: 1px solid var(--line); display: flex; justify-content: flex-start; }
+.posters-toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px 16px; margin-bottom: 18px; }
+.posters-toolbar .role-bar { margin-bottom: 0; }
+.curated-supplement { margin-top: 28px; padding-top: 22px; border-top: 1px solid var(--line); }
+.curated-supplement h3 { font-size: 1.12rem; }
+.curated-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 10px; }
+.curated-card { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--card-shadow); }
+.curated-card-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; }
+.curated-card-body { min-width: 0; display: grid; gap: 3px; }
+.curated-card-body strong { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--text-strong); font-size: .95rem; }
+.curated-card-main:hover strong { color: var(--amber); }
+.curated-card-body p { color: var(--text-2); font-size: .82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.curated-card > .button { flex: none; }
 .studio-canvas-wrap canvas { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; }
 .studio-v3.is-portrait .studio-canvas-wrap { width: min(100%, max(340px, calc((100dvh - 224px) * 3 / 4))); margin-inline: auto; }
 .studio-v3.is-portrait .studio-canvas-wrap canvas { aspect-ratio: 3 / 4; }
@@ -822,6 +840,7 @@ dialog .button { margin-top: 12px; min-width: 96px; }
   .command code { flex-basis: calc(100% - 24px); }
   .command .button { margin-left: auto; }
   .studio-v3 { max-width: none; padding-block: 12px 32px; gap: 8px; }
+  .studio-hints { display: none; }
   .studio-top { gap: 4px 12px; }
   .studio-stage-card { padding: 12px; gap: 10px; }
   .studio-dock-tools { width: 100%; }
