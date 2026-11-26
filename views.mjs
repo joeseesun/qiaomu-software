@@ -159,7 +159,7 @@ ${analytics}
 <header class="site-header">
   <div class="shell header-inner">
     <a class="brand" href="/"><img src="${markAsset}" width="28" height="28" alt=""><span>乔木软件推荐</span></a>
-    <nav class="main-nav" aria-label="主导航">${nav('/posters', '海报', 'posters')}${nav('/apps', '软件榜', 'apps')}${nav('/setup', '装机包', 'setup')}${nav('/taste', '体检', 'taste')}</nav>
+    <nav class="main-nav" aria-label="主导航">${nav('/posters', '海报', 'posters')}${nav('/apps', '软件榜', 'apps')}${nav('/alternatives', '平替', 'alternatives')}${nav('/setup', '装机包', 'setup')}${nav('/taste', '体检', 'taste')}${nav('/insights', '洞察', 'insights')}</nav>
     <form class="header-search" role="search" action="/apps" data-suggest-wrap>
       <label class="sr" for="header-q">搜索软件或需求</label>${glyph('search')}
       <input id="header-q" type="search" name="q" maxlength="60" placeholder="搜软件或需求，如 截图 / 剪贴板" autocomplete="off" aria-autocomplete="list" aria-controls="header-suggest" aria-expanded="false">
@@ -223,6 +223,7 @@ ${analytics}
     <span><kbd>Esc</kbd> 关闭</span>
   </div>
 </dialog>
+<button type="button" id="to-top" class="to-top" hidden aria-label="回到顶部" title="回到顶部"><svg class="glyph" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 15-6-6-6 6"/></svg></button>
 <div id="site-toast" class="site-toast" role="status" aria-live="polite"></div>
 </body>
 </html>`;
@@ -238,7 +239,7 @@ function posterCard(row, { compact = false } = {}) {
   return `<article class="poster-card${compact ? ' is-compact' : ''}">
   <a class="poster-thumb" href="/s/${id}"><img src="${thumb(id)}" alt="${esc(row.name + '的推荐海报：' + row.title)}" width="${esc(row.width)}" height="${esc(row.height)}" loading="lazy" decoding="async"><span class="count-pill">${num(row.items.length)} 款</span></a>
   <h3><a href="/s/${id}">${esc(row.title)}</a></h3>
-  <p class="poster-meta">${authorLink(row.name)}${row.role ? `<span class="dot" aria-hidden="true">·</span>${rolePill(row.role)}` : ''}<span class="dot" aria-hidden="true">·</span>${esc(ago(row.created))}</p>
+  <p class="poster-meta">${authorLink(row.name)}${row.role ? `<span class="dot" aria-hidden="true">·</span>${rolePill(row.role)}` : ''}<span class="dot" aria-hidden="true">·</span>${esc(ago(row.created))}<span class="dot" aria-hidden="true">·</span><span class="mini-tag">${row.source === 'web' ? '网页' : '本机'}</span></p>
   ${compact ? '' : iconStrip(row.items)}
 </article>`;
 }
@@ -1317,12 +1318,19 @@ export function studioPage({ origin, umamiId, catalogApps = [], wallpapers = [],
         </div>
       </div>
       <div class="style-group">
+        <p class="style-label">卡片排版质感</p>
+        <div class="font-grid" role="group" aria-label="选择海报排版风格">
+          <button type="button" class="font-card is-active" data-layout="classic" aria-pressed="true"><strong>经典桌面</strong><span>纯净摄影壁纸 · 浮动图标</span></button>
+          <button type="button" class="font-card" data-layout="glass" aria-pressed="false"><strong>磨砂卡片</strong><span>半透明毛玻璃分组 · 画报质感</span></button>
+        </div>
+      </div>
+      <div class="style-group">
         <p class="style-label">海报开源字体</p>
         <div class="font-grid" role="group" aria-label="选择海报字体">
-          <button type="button" class="font-card is-active" data-font="wenkai" aria-pressed="true"><strong>霞鹜文楷</strong><span>默认开源字体 · 温润雅致</span></button>
-          <button type="button" class="font-card" data-font="noto-serif" aria-pressed="false"><strong>思源宋体</strong><span>开源衬线体 · 出版质感</span></button>
-          <button type="button" class="font-card" data-font="noto-sans" aria-pressed="false"><strong>思源黑体</strong><span>开源无衬线 · 干净现代</span></button>
-          <button type="button" class="font-card" data-font="smiley" aria-pressed="false"><strong>得意黑</strong><span>开源海报体 · 利落斜体</span></button>
+          <button type="button" class="font-card is-active" data-font="wenkai" aria-pressed="true"><strong class="font-preview-wenkai">霞鹜文楷</strong><span>默认开源字体 · 温润雅致</span></button>
+          <button type="button" class="font-card" data-font="noto-serif" aria-pressed="false"><strong class="font-preview-serif">思源宋体</strong><span>开源衬线体 · 出版质感</span></button>
+          <button type="button" class="font-card" data-font="noto-sans" aria-pressed="false"><strong class="font-preview-sans">思源黑体</strong><span>开源无衬线 · 干净现代</span></button>
+          <button type="button" class="font-card" data-font="smiley" aria-pressed="false"><strong class="font-preview-smiley">得意黑</strong><span>开源海报体 · 利落斜体</span></button>
         </div>
       </div>
       <div class="studio-fields">
@@ -1449,7 +1457,7 @@ export function alternativesPage({ origin, umamiId, rows = [], freeCasks = [], s
   return frame({
     title: 'Mac & AI 付费软件开源平替大全',
     description: `精选 ${rows.length} 组热门付费 Mac 软件与 AI 工具的 0 元开源免费替代方案，含真实投票、一键 Homebrew 安装与并排对比。`,
-    origin, umamiId, path: '/alternatives', current: 'apps', jsonLd: altJsonLd, main: `
+    origin, umamiId, path: '/alternatives', current: 'alternatives', jsonLd: altJsonLd, main: `
 <section class="shell page-head">
   <div>
     <h1>Mac &amp; AI 付费软件开源平替大全</h1>
@@ -1530,7 +1538,7 @@ export function insightsPage({ origin, umamiId, report }) {
   return frame({
     title: '真实 Mac 软件生态数据洞察',
     description: `基于 ${stats.posters} 张真实 Mac 桌面海报实时统计：装机率 Top 榜、最常见黄金搭档组合、开源免费与 Homebrew 覆盖率报告。`,
-    origin, umamiId, path: '/insights', current: 'apps', jsonLd: insightsJsonLd, main: `
+    origin, umamiId, path: '/insights', current: 'insights', jsonLd: insightsJsonLd, main: `
 <section class="shell page-head">
   <div>
     <h1>真实 Mac 软件生态数据洞察</h1>

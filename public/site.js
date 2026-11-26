@@ -611,6 +611,7 @@ function syncKitUI() {
     kitFab.hidden = kit.length === 0;
     kitFabCount.textContent = String(kit.length);
   }
+  document.body.classList.toggle('has-kit-fab', kit.length > 0);
   const plusSvg = '<svg class="glyph" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>';
   const checkSvg = '<svg class="glyph" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
   for (const btn of document.querySelectorAll('[data-kit-toggle]')) {
@@ -1319,4 +1320,16 @@ if (altHub) {
     });
   }
   searchInput?.addEventListener('input', applyAltFilter);
+}
+
+// Smooth Back-to-Top button on long pages
+const toTopBtn = document.getElementById('to-top');
+if (toTopBtn) {
+  const syncToTop = () => { toTopBtn.hidden = window.scrollY < 480; };
+  window.addEventListener('scroll', syncToTop, { passive: true });
+  syncToTop();
+  toTopBtn.addEventListener('click', () => {
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' });
+  });
 }

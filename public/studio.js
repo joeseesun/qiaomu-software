@@ -96,6 +96,7 @@
   let activeFont = 'wenkai';
   let activeAspect = 'wide';
   let activeScrim = 'desktop';
+  let activeLayout = 'classic';
   let bgImage = null;
   let activeWallpaperUrl = wallpapers[0]?.url || '';
   let activeThemeFilter = '';
@@ -112,6 +113,7 @@
         apps: selectedApps.map(a => ({ name: a.name, key: a.key, group: a.group, note: a.note || '', icon: a.icon || '' })),
         wallpaperUrl: activeWallpaperUrl,
         scrim: activeScrim,
+        layout: activeLayout,
         font: activeFont,
         aspect: activeAspect,
         name: nameInput?.value || '',
@@ -292,6 +294,13 @@
     }
     if (seq !== renderSeq) return;
 
+    const isGlass = activeLayout === 'glass';
+    const sections = [];
+    for (const row of rows) {
+      if (row.label || !sections.length) sections.push({ label: row.label, rows: [row] });
+      else sections[sections.length - 1].rows.push(row);
+    }
+
     const W = isPortrait ? 1200 : 1600;
     const footerH = isPortrait ? 64 : 46;
     let H, rowHeight;
@@ -299,7 +308,8 @@
       const topPad = 210;
       const groupHeaders = rows.filter(r => r.label).length;
       rowHeight = rows.length <= 5 ? 196 : 164;
-      H = Math.max(1600, topPad + footerH + rows.length * rowHeight + groupHeaders * 42);
+      const glassExtra = isGlass ? sections.length * 40 : 0;
+      H = Math.max(1600, topPad + footerH + rows.length * rowHeight + groupHeaders * 46 + glassExtra);
     } else {
       rowHeight = rows.length <= 5 ? Math.min(146, Math.floor(650 / Math.max(1, rows.length))) : 118;
       H = Math.max(900, 214 + footerH + rows.length * rowHeight);
@@ -392,40 +402,113 @@
       return;
     }
 
+    const drawGlassCard = (x, y, w, h, r = 22) => {
+      ctx.save();
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.36)';
+      ctx.shadowBlur = 24;
+      ctx.shadowOffsetY = 8;
+      roundedRect(ctx, x, y, w, h, r);
+      ctx.fillStyle = 'rgba(13, 18, 28, 0.50)';
+      ctx.fill();
+      ctx.restore();
+
+      ctx.save();
+      roundedRect(ctx, x, y, w, h, r);
+      const sheen = ctx.createLinearGradient(x, y, x, y + h);
+      sheen.addColorStop(0, 'rgba(255, 255, 255, 0.085)');
+      sheen.addColorStop(0.32, 'rgba(255, 255, 255, 0.015)');
+      sheen.addColorStop(1, 'rgba(255, 255, 255, 0.03)');
+      ctx.fillStyle = sheen;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.16)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.restore();
+    };
+
     if (isPortrait) {
-      let curY = 212;
+      let curY = 208;
       const cols = 4;
       const step = (W - marginX * 2) / cols;
-      const iconSize = Math.min(114, Math.round(rowHeight * 0.58));
-      rows.forEach((row) => {
-        if (row.label) {
-          const labelBase = activeFont === 'smiley' ? 38 : 34;
-          const fittedLabel = fitText(row.label, fp.label, labelBase, 22, W - marginX * 2);
-          ctx.font = fp.label(fittedLabel.size);
-          drawShadowText(fittedLabel.text, marginX, curY + 26, 'left', 'rgba(255,251,244,0.92)');
-          curY += 46;
-        }
-        row.apps.forEach((app, colIdx) => {
-          const cx = marginX + step * (colIdx + 0.5);
-          const ix = cx - iconSize / 2;
-          const iy = curY;
-          const img = app.icon ? iconImages.get(app.icon) : null;
-          if (img) {
+      const iconSize = Math.min(isGlass ? 106 : 114, Math.round(rowHeight * (isGlass ? 0.54 : 0.58)));
+      for (const sec of sections) {
+        if (isGlass) {
+          const cardX = marginX - 24;
+          const cardW = W - cardX * 2;
+          const headerH = sec.label ? 56 : 14;
+          const cardH = headerH + sec.rows.length * rowHeight + 6;
+          drawGlassCard(cardX, curY, cardW, cardH, 26);
+          let innerY = curY + 14;
+          if (sec.label) {
+            const labelBase = activeFont === 'smiley' ? 36 : 32;
+            const fittedLabel = fitText(sec.label, fp.label, labelBase, 22, cardW - 52);
+            ctx.font = fp.label(fittedLabel.size);
+            drawShadowText(fittedLabel.text, marginX + 2, innerY + 26, 'left', 'rgba(255,251,244,0.95)');
             ctx.save();
-            ctx.shadowColor = 'rgba(0,0,0,0.44)';
-            ctx.shadowBlur = 16;
-            ctx.shadowOffsetY = 6;
-            ctx.drawImage(img, ix, iy, iconSize, iconSize);
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.10)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(cardX + 24, innerY + 42);
+            ctx.lineTo(cardX + cardW - 24, innerY + 42);
+            ctx.stroke();
             ctx.restore();
-          } else {
-            drawFallbackTile(ix, iy, iconSize, app.name);
+            innerY += 56;
           }
-          const fittedName = fitText(app.name, (sz) => uiFont(sz, 600), 22, 15, step - 14);
-          ctx.font = uiFont(fittedName.size, 600);
-          drawShadowText(fittedName.text, cx, iy + iconSize + 30, 'center', white);
-        });
-        curY += rowHeight;
-      });
+          sec.rows.forEach((row) => {
+            row.apps.forEach((app, colIdx) => {
+              const cx = marginX + step * (colIdx + 0.5);
+              const ix = cx - iconSize / 2;
+              const iy = innerY + 6;
+              const img = app.icon ? iconImages.get(app.icon) : null;
+              if (img) {
+                ctx.save();
+                ctx.shadowColor = 'rgba(0,0,0,0.44)';
+                ctx.shadowBlur = 16;
+                ctx.shadowOffsetY = 6;
+                ctx.drawImage(img, ix, iy, iconSize, iconSize);
+                ctx.restore();
+              } else {
+                drawFallbackTile(ix, iy, iconSize, app.name);
+              }
+              const fittedName = fitText(app.name, (sz) => uiFont(sz, 600), 21, 15, step - 14);
+              ctx.font = uiFont(fittedName.size, 600);
+              drawShadowText(fittedName.text, cx, iy + iconSize + 28, 'center', white);
+            });
+            innerY += rowHeight;
+          });
+          curY += cardH + 18;
+        } else {
+          sec.rows.forEach((row) => {
+            if (row.label) {
+              const labelBase = activeFont === 'smiley' ? 38 : 34;
+              const fittedLabel = fitText(row.label, fp.label, labelBase, 22, W - marginX * 2);
+              ctx.font = fp.label(fittedLabel.size);
+              drawShadowText(fittedLabel.text, marginX, curY + 26, 'left', 'rgba(255,251,244,0.92)');
+              curY += 46;
+            }
+            row.apps.forEach((app, colIdx) => {
+              const cx = marginX + step * (colIdx + 0.5);
+              const ix = cx - iconSize / 2;
+              const iy = curY;
+              const img = app.icon ? iconImages.get(app.icon) : null;
+              if (img) {
+                ctx.save();
+                ctx.shadowColor = 'rgba(0,0,0,0.44)';
+                ctx.shadowBlur = 16;
+                ctx.shadowOffsetY = 6;
+                ctx.drawImage(img, ix, iy, iconSize, iconSize);
+                ctx.restore();
+              } else {
+                drawFallbackTile(ix, iy, iconSize, app.name);
+              }
+              const fittedName = fitText(app.name, (sz) => uiFont(sz, 600), 22, 15, step - 14);
+              ctx.font = uiFont(fittedName.size, 600);
+              drawShadowText(fittedName.text, cx, iy + iconSize + 30, 'center', white);
+            });
+            curY += rowHeight;
+          });
+        }
+      }
       saveDraft();
       return;
     }
@@ -433,11 +516,45 @@
     const labelW = 198;
     const cols = Math.max(6, ...rows.map(r => r.apps.length));
     const step = (W - labelW - 128) / cols;
-    const iconSize = Math.min(86, Math.round(rowHeight * 0.62));
+    const iconSize = isGlass
+      ? Math.min(82, Math.round(rowHeight * 0.56))
+      : Math.min(86, Math.round(rowHeight * 0.62));
+
+    if (isGlass) {
+      let rowCursor = 0;
+      for (const sec of sections) {
+        const cardX = 46;
+        const cardW = W - 92;
+        const cardY = 180 + rowCursor * rowHeight + 5;
+        const cardH = sec.rows.length * rowHeight - 10;
+        drawGlassCard(cardX, cardY, cardW, cardH, 22);
+
+        // Subtle vertical divider between category label and app icons
+        const divX = 64 + labelW - 12;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.11)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(divX, cardY + 18);
+        ctx.lineTo(divX, cardY + cardH - 18);
+        ctx.stroke();
+        ctx.restore();
+
+        if (sec.label) {
+          const labelBase = activeFont === 'smiley' ? 32 : 28;
+          const fittedLabel = fitText(sec.label, fp.label, labelBase, 18, labelW - 34);
+          ctx.font = fp.label(fittedLabel.size);
+          drawShadowText(fittedLabel.text, 76, cardY + cardH / 2 + fittedLabel.size * 0.34, 'left', white);
+        }
+        rowCursor += sec.rows.length;
+      }
+    }
 
     rows.forEach((row, rowIdx) => {
-      const rowTop = 186 + rowIdx * rowHeight;
-      if (row.label) {
+      const slotTop = isGlass ? 180 + rowIdx * rowHeight : 186 + rowIdx * rowHeight;
+      const contentH = iconSize + 26;
+      const rowTop = isGlass ? slotTop + Math.max(10, Math.round((rowHeight - contentH) / 2) - 2) : slotTop;
+      if (row.label && !isGlass) {
         const labelBase = activeFont === 'smiley' ? 34 : 30;
         const fittedLabel = fitText(row.label, fp.label, labelBase, 18, labelW - 22);
         ctx.font = fp.label(fittedLabel.size);
@@ -460,9 +577,9 @@
           drawFallbackTile(ix, iy, iconSize, app.name);
         }
 
-        const fittedName = fitText(app.name, (sz) => uiFont(sz, 600), 19, 13, step - 10);
+        const fittedName = fitText(app.name, (sz) => uiFont(sz, 600), isGlass ? 18 : 19, 13, step - 10);
         ctx.font = uiFont(fittedName.size, 600);
-        drawShadowText(fittedName.text, cx, iy + iconSize + 26, 'center', white);
+        drawShadowText(fittedName.text, cx, iy + iconSize + 24, 'center', white);
       });
     });
     saveDraft();
@@ -657,7 +774,14 @@
   // Modal openers
   document.getElementById('open-apps-modal')?.addEventListener('click', () => appsModal?.showModal());
   document.getElementById('open-bg-modal')?.addEventListener('click', () => bgModal?.showModal());
-  document.getElementById('open-style-modal')?.addEventListener('click', () => styleModal?.showModal());
+  document.getElementById('open-style-modal')?.addEventListener('click', () => {
+    styleModal?.showModal();
+    // Preload open-source font subsets so all 4 typeface cards render their real glyph styles
+    ensureFontLoaded('wenkai', '霞鹜文楷');
+    ensureFontLoaded('noto-serif', '思源宋体');
+    ensureFontLoaded('noto-sans', '思源黑体');
+    ensureFontLoaded('smiley', '得意黑');
+  });
 
   for (const btn of document.querySelectorAll('[data-catalog-key]')) {
     btn.addEventListener('click', () => toggleCatalogApp(btn.dataset.catalogKey));
@@ -832,7 +956,19 @@
     }
   });
 
-  // Aspect ratio & Font & watermark controls
+  // Aspect ratio, Layout card style, Font & watermark controls
+  for (const btn of document.querySelectorAll('[data-layout]')) {
+    btn.addEventListener('click', async () => {
+      activeLayout = btn.dataset.layout;
+      for (const other of document.querySelectorAll('[data-layout]')) {
+        const on = other === btn;
+        other.classList.toggle('is-active', on);
+        other.setAttribute('aria-pressed', on ? 'true' : 'false');
+      }
+      await renderPoster();
+      window.qiaomuToast?.(`已切换为「${btn.querySelector('strong')?.textContent || '新排版'}」`);
+    });
+  }
   for (const btn of document.querySelectorAll('[data-aspect]')) {
     btn.addEventListener('click', async () => {
       activeAspect = btn.dataset.aspect;
@@ -1063,6 +1199,14 @@
         if (draft.scrim === 'night' || draft.scrim === 'desktop' || draft.scrim === 'blur') {
           activeScrim = draft.scrim;
           for (const other of document.querySelectorAll('[data-scrim]')) other.classList.toggle('is-on', other.dataset.scrim === activeScrim);
+        }
+        if (draft.layout === 'glass' || draft.layout === 'classic') {
+          activeLayout = draft.layout;
+          for (const other of document.querySelectorAll('[data-layout]')) {
+            const on = other.dataset.layout === activeLayout;
+            other.classList.toggle('is-active', on);
+            other.setAttribute('aria-pressed', on ? 'true' : 'false');
+          }
         }
         if (draft.font && FONT_PRESETS[draft.font]) {
           activeFont = draft.font;
