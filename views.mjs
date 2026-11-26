@@ -310,7 +310,11 @@ export function home({ origin, umamiId, stats, popular = [], rising = false, lat
     <a class="quote-app" href="${appHref(r.app_key)}">${appIcon({ name: r.app_name, icon: r.icon }, 'md')}<span><strong>${esc(r.app_name)}</strong>${r.votes ? `<span class="quote-votes">${glyph('thumb')}${num(r.votes)}</span>` : ''}</span></a>
     <blockquote><p>${quoted(r.note)}</p></blockquote>
     <p class="reason-by">${r.id ? `${authorLink(r.author)}<span class="dot" aria-hidden="true">·</span><a href="/s/${esc(r.id)}">${esc(r.title)}</a>` : `<span class="author">${esc(r.author)}</span><span class="dot" aria-hidden="true">·</span>${esc(kindLabels[r.kind] ?? '体验点评')}`}</p>
-  </li>`).join('')}</ul>
+  </li>`).join('')}${featuredReasons.length < 3 ? `<li class="quote-card quote-card-cta">
+    <div class="quote-cta-head">${glyph('sparkles')}<strong>写下你的真实种草理由</strong></div>
+    <p class="quote-cta-copy">制作海报时点一下画布上的图标，或在任意软件页补上一句使用技巧 / 避坑提醒，就能帮到后来者。</p>
+    <div class="actions"><a class="button secondary small" href="/studio">${glyph('plus')}做海报写理由</a><a class="button secondary small" href="/apps">逛软件榜点评</a></div>
+  </li>` : ''}</ul>
 </section>` : '';
 
   const shelfSection = shelf.length ? `<section class="section shelf-section" aria-labelledby="latest-title">
@@ -1161,6 +1165,7 @@ export function studioPage({ origin, umamiId, catalogApps = [], wallpapers = [],
     key: a.key,
     name: a.name,
     count: a.count,
+    cask: a.cask ?? '',
     group: a.categories?.[0] ?? '效率与工具',
     themes: a.themes ?? [],
     icon: a.icon ?? '',
@@ -1191,12 +1196,25 @@ export function studioPage({ origin, umamiId, catalogApps = [], wallpapers = [],
       <h1>制作你的软件海报</h1>
       <p class="studio-sub">点选软件 · 挑张壁纸 · 填名字出图</p>
     </div>
-    <a class="text-link studio-skill-link" href="/make">${glyph('terminal')}用 Mac Skill 自动扫描本机${glyph('arrow')}</a>
+    <div class="studio-top-right">
+      <div class="studio-quick-pills" aria-label="快捷切换画幅与排版">
+        <div class="studio-seg" role="group" aria-label="海报画幅">
+          <button type="button" class="studio-seg-btn is-active" data-aspect="wide" aria-pressed="true">16:9 横版</button>
+          <button type="button" class="studio-seg-btn" data-aspect="portrait" aria-pressed="false">3:4 竖版</button>
+        </div>
+        <div class="studio-seg" role="group" aria-label="卡片质感">
+          <button type="button" class="studio-seg-btn is-active" data-layout="classic" aria-pressed="true">经典桌面</button>
+          <button type="button" class="studio-seg-btn" data-layout="glass" aria-pressed="false">磨砂卡片</button>
+        </div>
+      </div>
+      <a class="text-link studio-skill-link" href="/make">${glyph('terminal')}Mac Skill 扫描${glyph('arrow')}</a>
+    </div>
   </header>
 
   <div class="studio-stage-card">
     <div class="studio-canvas-wrap" id="studio-dropzone">
       <canvas id="studio-canvas" width="1600" height="900" aria-label="软件推荐海报实时预览"></canvas>
+      <div class="studio-canvas-tip" id="studio-canvas-tip" hidden aria-hidden="true"></div>
       <div class="studio-drop-overlay" aria-hidden="true"><span>${glyph('upload')}松开即可设为海报壁纸</span></div>
     </div>
 
@@ -1219,7 +1237,7 @@ export function studioPage({ origin, umamiId, catalogApps = [], wallpapers = [],
     </div>
     <p id="studio-status" class="studio-status" role="status"></p>
   </div>
-  <p class="studio-hints"><span>拖拽或 <kbd>⌘V</kbd> 粘贴图片可直换壁纸</span><span class="dot" aria-hidden="true">·</span><span>按 <kbd>R</kbd> 随机换壁纸</span><span class="dot" aria-hidden="true">·</span><span><kbd>⌘S</kbd> 下载高清图</span></p>
+  <p class="studio-hints"><span>点击画布图标可写推荐理由或调顺序</span><span class="dot" aria-hidden="true">·</span><span>拖拽或 <kbd>⌘V</kbd> 直换壁纸</span><span class="dot" aria-hidden="true">·</span><span>按 <kbd>R</kbd> 随机壁纸</span><span class="dot" aria-hidden="true">·</span><span><kbd>⌘S</kbd> 下载高清图</span></p>
 
   <div class="studio-card" id="studio-history-card" hidden>
     <h2>本机发布过的海报</h2>
@@ -1311,6 +1329,15 @@ export function studioPage({ origin, umamiId, catalogApps = [], wallpapers = [],
     </div>
     <div class="style-modal-body">
       <div class="style-group">
+        <p class="style-label">一键套用海报风格</p>
+        <div class="recipe-grid" role="group" aria-label="一键海报风格">
+          <button type="button" class="recipe-chip" data-recipe="goldengate-glass"><strong>金门磨砂</strong><span>16:9 · 磨砂 · 霞鹜文楷</span></button>
+          <button type="button" class="recipe-chip" data-recipe="aurora-blur"><strong>极光暗夜</strong><span>16:9 · 柔焦 · 思源黑体</span></button>
+          <button type="button" class="recipe-chip" data-recipe="xhs-portrait"><strong>小红书竖卡</strong><span>3:4 · 磨砂 · 霞鹜文楷</span></button>
+          <button type="button" class="recipe-chip" data-recipe="snow-editorial"><strong>雪山画报</strong><span>16:9 · 经典 · 思源宋体</span></button>
+        </div>
+      </div>
+      <div class="style-group">
         <p class="style-label">海报画幅比例</p>
         <div class="font-grid" role="group" aria-label="选择海报画幅">
           <button type="button" class="font-card is-active" data-aspect="wide" aria-pressed="true"><strong>16:9 横版</strong><span>桌面壁纸 · X / 公众号 / 博客</span></button>
@@ -1354,7 +1381,39 @@ export function studioPage({ origin, umamiId, catalogApps = [], wallpapers = [],
         <span>显示右下角水印（取消勾选可完全隐藏）</span>
       </label>
       <div class="style-modal-actions">
-        <button type="button" class="button secondary small" id="studio-copy-caption">${glyph('list')}一键复制社交分享配文</button>
+        <button type="button" class="button secondary small" id="studio-copy-caption">${glyph('list')}复制社交分享配文</button>
+        <button type="button" class="button secondary small" id="studio-copy-brew">${glyph('terminal')}复制已选 Brew 命令</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Modal 4: Quick App Edit (Click any icon on canvas) -->
+  <dialog id="studio-app-modal" class="studio-modal studio-modal-xs" closedby="any" aria-labelledby="app-edit-title">
+    <div class="modal-head">
+      <div class="app-edit-head">
+        <img id="app-edit-icon" width="36" height="36" alt="" hidden>
+        <div>
+          <h2 id="app-edit-title">编辑软件</h2>
+          <p class="kit-sub">写一句推荐理由，发布后会展示在海报详情与软件页</p>
+        </div>
+      </div>
+      <form method="dialog"><button type="submit" class="button secondary small" aria-label="关闭">关闭</button></form>
+    </div>
+    <div class="app-edit-body">
+      <label class="app-edit-field">
+        <span>分组分类</span>
+        <input type="text" id="app-edit-group" maxlength="14" list="app-edit-cat-list" placeholder="如：AI 与开发">
+        <datalist id="app-edit-cat-list">${defaultCats.map(c => `<option value="${esc(c)}">`).join('')}</datalist>
+      </label>
+      <label class="app-edit-field">
+        <span>一句话推荐理由（可选，60 字内）</span>
+        <textarea id="app-edit-note" rows="2" maxlength="60" placeholder="为什么离不开它？例如：一个快捷键搞定剪贴板、窗口分屏和 AI 对话"></textarea>
+      </label>
+      <div class="app-edit-actions">
+        <button type="button" class="button secondary small" id="app-edit-up">↑ 前移</button>
+        <button type="button" class="button secondary small" id="app-edit-down">↓ 后移</button>
+        <button type="button" class="button secondary small app-edit-rm" id="app-edit-remove">移除</button>
+        <button type="button" class="button primary small app-edit-save" id="app-edit-save">保存</button>
       </div>
     </div>
   </dialog>
@@ -1466,6 +1525,40 @@ export function alternativesPage({ origin, umamiId, rows = [], freeCasks = [], s
   </div>
 </section>
 <section class="shell alt-hub" data-alt-hub>
+  <section class="alt-calc-card" id="alt-calc-card" aria-labelledby="alt-calc-title">
+    <div class="alt-calc-top">
+      <div>
+        <span class="track-eyebrow">互动省钱计算器</span>
+        <h2 id="alt-calc-title">算算改用开源平替，一年能省多少订阅费？</h2>
+        <p class="kit-sub">勾选下方你正在付费（或打算买）的软件，或点快捷组合一键试算：</p>
+      </div>
+      <div class="alt-calc-figure">
+        <span class="alt-calc-label">每年预计可省</span>
+        <strong class="alt-calc-num num" id="alt-calc-total">¥0</strong>
+        <span class="alt-calc-count" id="alt-calc-count">已选 0 款付费软件</span>
+      </div>
+    </div>
+    <div class="alt-calc-presets" role="group" aria-label="快捷省钱组合试算">
+      <button type="button" class="filter-pill" data-alt-preset="cursor,claude code,conductor,wispr flow,1password">AI 开发者全家桶（约省 ¥4,900/年）</button>
+      <button type="button" class="filter-pill" data-alt-preset="cleanshot x,bartender,paste,alfred,magnet,bob,betterdisplay">Mac 效率控标配（约省 ¥1,141/年）</button>
+      <button type="button" class="filter-pill" data-alt-preset="notion,ulysses,chatgpt,perplexity,reeder">重度写作者（约省 ¥3,960/年）</button>
+      <button type="button" class="filter-pill" id="alt-calc-clear" hidden>清空勾选</button>
+    </div>
+    <div class="alt-calc-out" id="alt-calc-out" hidden>
+      <div class="command-terminal">
+        <div class="command-terminal-bar">
+          <span id="alt-calc-cmd-label">${glyph('terminal')} 你的专属开源平替一键安装命令</span>
+          <div class="actions">
+            <button type="button" class="button secondary small" id="alt-calc-to-kit">${glyph('box')}加入装机清单</button>
+            <button type="button" class="button secondary small" id="alt-calc-copy-bill">${glyph('list')}复制省钱账单</button>
+            <button type="button" class="button primary small" id="alt-calc-copy-cmd">${glyph('copy')}复制 Brew 命令</button>
+          </div>
+        </div>
+        <pre><code id="alt-calc-brew"></code></pre>
+      </div>
+    </div>
+  </section>
+
   ${brewAll ? `<div class="alt-brew-banner">
     <div class="command-terminal">
       <div class="command-terminal-bar">
@@ -1482,9 +1575,12 @@ export function alternativesPage({ origin, umamiId, rows = [], freeCasks = [], s
     <input type="search" id="alt-search" maxlength="50" placeholder="搜想替代的付费软件，如 CleanShot / Cursor / Conductor / 1Password…" autocomplete="off">
   </div>
   <ul class="alt-matrix" id="alt-matrix">
-    ${rows.map(r => `<li class="alt-pair-card" data-alt-item data-group="${esc(r.group)}" data-search="${esc((r.paid.name + ' ' + r.paid.summary + ' ' + r.alts.map(a => a.name + ' ' + a.summary).join(' ')).toLowerCase())}">
+    ${rows.map(r => `<li class="alt-pair-card" data-alt-item data-paid-key="${esc(r.paid.key)}" data-paid-name="${esc(r.paid.name)}" data-annual="${r.paid.annualCny}" data-alt-json="${esc(JSON.stringify(r.alts.map(a => ({ key: a.key, name: a.name, cask: a.cask, homepage: a.homepage, icon: a.icon }))))}" data-group="${esc(r.group)}" data-search="${esc((r.paid.name + ' ' + r.paid.summary + ' ' + r.alts.map(a => a.name + ' ' + a.summary).join(' ')).toLowerCase())}">
       <div class="alt-paid-col">
-        <span class="alt-col-label">热门付费 / 订阅</span>
+        <div class="alt-paid-top">
+          <span class="alt-col-label">热门付费 / 订阅</span>
+          <button type="button" class="alt-pick-btn" data-alt-pick="${esc(r.paid.key)}" aria-pressed="false"><span class="alt-pick-dot" aria-hidden="true"></span><span>我在用 · 约 ¥${r.paid.annualCny}/年</span></button>
+        </div>
         <a class="alt-app-link" href="${appHref(r.paid.key)}">
           ${appIcon(r.paid, 'md')}
           <div>

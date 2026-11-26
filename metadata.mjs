@@ -127,6 +127,47 @@ export const SETUP_PACKS = [
   },
 ];
 
+// Reference annual cost in CNY (approximate subscription or amortized 1st-year license)
+export const PAID_ANNUAL_CNY = {
+  'cleanshot x': 210,
+  'ishot pro': 98,
+  'bartender': 145,
+  'paste': 218,
+  'alfred': 280,
+  'magnet': 50,
+  'bob': 98,
+  'betterdisplay': 140,
+  'docker desktop': 430,
+  'postman': 1000,
+  'tower': 498,
+  'fork': 360,
+  '1password': 260,
+  'surge': 360,
+  'screen studio': 640,
+  'reeder': 72,
+  'typora': 108,
+  'bear': 218,
+  'ulysses': 288,
+  'ia writer': 360,
+  'notion': 720,
+  'infuse': 72,
+  'transmit': 325,
+  'downie': 145,
+  'cursor': 1440,
+  'windsurf': 1080,
+  'claude code': 1440,
+  'codex': 1440,
+  'conductor': 720,
+  'paradev': 720,
+  'devin': 1440,
+  'chatgpt': 1440,
+  'claude': 1440,
+  'wispr flow': 1040,
+  'midjourney': 720,
+  'perplexity': 1440,
+  'linear': 690,
+};
+
 // Direct curated free/open-source alternatives for paid or freemium apps
 export const FREE_ALTERNATIVES = {
   'cleanshot x': ['shottr', 'pixpin', 'snipaste'],

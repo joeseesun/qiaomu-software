@@ -101,10 +101,44 @@
   let activeWallpaperUrl = wallpapers[0]?.url || '';
   let activeThemeFilter = '';
   let editing = null;
+  let drawnHitboxes = [];
+  let editingAppKey = null;
   const selectedApps = [];
   const iconImages = new Map();
   const wallpaperCache = new Map();
   const loadedStylesheets = new Set();
+
+  const canvasTipEl = document.getElementById('studio-canvas-tip');
+  const appEditModal = document.getElementById('studio-app-modal');
+  const appEditIcon = document.getElementById('app-edit-icon');
+  const appEditTitle = document.getElementById('app-edit-title');
+  const appEditGroup = document.getElementById('app-edit-group');
+  const appEditNote = document.getElementById('app-edit-note');
+  const appEditUp = document.getElementById('app-edit-up');
+  const appEditDown = document.getElementById('app-edit-down');
+  const appEditRemove = document.getElementById('app-edit-remove');
+  const appEditSave = document.getElementById('app-edit-save');
+
+  function syncModeButtons() {
+    for (const btn of document.querySelectorAll('[data-aspect]')) {
+      const on = btn.dataset.aspect === activeAspect;
+      btn.classList.toggle('is-active', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+    for (const btn of document.querySelectorAll('[data-layout]')) {
+      const on = btn.dataset.layout === activeLayout;
+      btn.classList.toggle('is-active', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+    for (const btn of document.querySelectorAll('[data-font]')) {
+      const on = btn.dataset.font === activeFont;
+      btn.classList.toggle('is-active', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+    for (const btn of document.querySelectorAll('[data-scrim]')) {
+      btn.classList.toggle('is-on', btn.dataset.scrim === activeScrim);
+    }
+  }
 
   function saveDraft() {
     if (editing) return;
@@ -396,12 +430,14 @@
     }
 
     if (!rows.length) {
+      drawnHitboxes = [];
       ctx.font = uiFont(28, 500);
       drawShadowText('点击下方「选软件」挑几款你常用的 Mac 应用', W / 2, H / 2 + 12, 'center', 'rgba(255,251,244,0.84)');
       saveDraft();
       return;
     }
 
+    drawnHitboxes = [];
     const drawGlassCard = (x, y, w, h, r = 22) => {
       ctx.save();
       ctx.shadowColor = 'rgba(0, 0, 0, 0.36)';
@@ -459,6 +495,7 @@
               const cx = marginX + step * (colIdx + 0.5);
               const ix = cx - iconSize / 2;
               const iy = innerY + 6;
+              drawnHitboxes.push({ app, x: ix - 8, y: iy - 6, w: iconSize + 16, h: iconSize + 40 });
               const img = app.icon ? iconImages.get(app.icon) : null;
               if (img) {
                 ctx.save();
@@ -490,6 +527,7 @@
               const cx = marginX + step * (colIdx + 0.5);
               const ix = cx - iconSize / 2;
               const iy = curY;
+              drawnHitboxes.push({ app, x: ix - 8, y: iy - 6, w: iconSize + 16, h: iconSize + 40 });
               const img = app.icon ? iconImages.get(app.icon) : null;
               if (img) {
                 ctx.save();
@@ -565,6 +603,7 @@
         const cx = 64 + labelW + step * (colIdx + 0.5);
         const ix = cx - iconSize / 2;
         const iy = rowTop;
+        drawnHitboxes.push({ app, x: ix - 8, y: iy - 6, w: iconSize + 16, h: iconSize + 36 });
         const img = app.icon ? iconImages.get(app.icon) : null;
         if (img) {
           ctx.save();
@@ -956,39 +995,171 @@
     }
   });
 
+  // Copy selected apps' Homebrew Cask command right from /studio
+  document.getElementById('studio-copy-brew')?.addEventListener('click', async () => {
+    const casks = [...new Set(selectedApps.map(a => catalogByKey.get(a.key)?.cask).filter(Boolean))];
+    if (!casks.length) {
+      window.qiaomuToast?.('当前已选软件中暂未匹配到 Homebrew Cask');
+      return;
+    }
+    const cmd = 'brew install --cask ' + casks.join(' ');
+    try {
+      await navigator.clipboard.writeText(cmd);
+      window.qiaomuToast?.(`已复制 ${casks.length} 款软件的 Brew 装机命令`);
+    } catch {
+      window.qiaomuToast?.('复制失败，请检查浏览器剪贴板权限');
+    }
+  });
+
+  // One-click Aesthetic Recipes
+  const RECIPES = {
+    'goldengate-glass': { wpId: '01-goldengate', layout: 'glass', font: 'wenkai', scrim: 'desktop', aspect: 'wide', label: '金门磨砂' },
+    'aurora-blur': { wpId: '03-aurora', layout: 'glass', font: 'noto-sans', scrim: 'blur', aspect: 'wide', label: '极光暗夜' },
+    'xhs-portrait': { wpId: '14-autumn', layout: 'glass', font: 'wenkai', scrim: 'blur', aspect: 'portrait', label: '小红书竖卡' },
+    'snow-editorial': { wpId: '20-snow', layout: 'classic', font: 'noto-serif', scrim: 'night', aspect: 'wide', label: '雪山画报' },
+  };
+  for (const btn of document.querySelectorAll('[data-recipe]')) {
+    btn.addEventListener('click', async () => {
+      const r = RECIPES[btn.dataset.recipe];
+      if (!r) return;
+      activeLayout = r.layout;
+      activeFont = r.font;
+      activeScrim = r.scrim;
+      activeAspect = r.aspect;
+      syncModeButtons();
+      const wp = wallpapers.find(w => w.id === r.wpId);
+      if (wp) await selectWallpaper(wp.url, wp.name, null, true);
+      else await renderPoster();
+      window.qiaomuToast?.(`已套用「${r.label}」风格`);
+    });
+  }
+
+  // Interactive Canvas: Hover tooltip + Click any app icon to edit note / group / order
+  function findHitApp(e) {
+    if (!drawnHitboxes.length) return null;
+    const rect = canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    const cx = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const cy = (e.clientY - rect.top) * (canvas.height / rect.height);
+    for (const h of drawnHitboxes) {
+      if (cx >= h.x && cx <= h.x + h.w && cy >= h.y && cy <= h.y + h.h) return h.app;
+    }
+    return null;
+  }
+
+  function openAppEditModal(app) {
+    if (!appEditModal || !app) return;
+    const idx = selectedApps.findIndex(a => a.key === app.key);
+    if (idx < 0) return;
+    editingAppKey = app.key;
+    if (appEditTitle) appEditTitle.textContent = app.name;
+    if (appEditIcon) {
+      if (app.icon) {
+        appEditIcon.src = '/icons/' + app.icon + '.webp';
+        appEditIcon.hidden = false;
+      } else {
+        appEditIcon.hidden = true;
+      }
+    }
+    if (appEditGroup) appEditGroup.value = app.group || '效率与工具';
+    if (appEditNote) appEditNote.value = app.note || '';
+    if (appEditUp) appEditUp.disabled = idx === 0;
+    if (appEditDown) appEditDown.disabled = idx === selectedApps.length - 1;
+    appEditModal.showModal();
+    appEditNote?.focus();
+  }
+
+  canvas.addEventListener('pointermove', (e) => {
+    const hit = findHitApp(e);
+    canvas.classList.toggle('is-hover-app', Boolean(hit));
+    if (canvasTipEl) {
+      if (hit) {
+        canvasTipEl.textContent = hit.note
+          ? `${hit.name}：${hit.note}（点击修改）`
+          : `点击「${hit.name}」写推荐理由 / 改分类`;
+        canvasTipEl.hidden = false;
+      } else {
+        canvasTipEl.hidden = true;
+      }
+    }
+  });
+  canvas.addEventListener('pointerleave', () => {
+    canvas.classList.remove('is-hover-app');
+    if (canvasTipEl) canvasTipEl.hidden = true;
+  });
+  canvas.addEventListener('click', (e) => {
+    const hit = findHitApp(e);
+    if (hit) openAppEditModal(hit);
+  });
+
+  const commitAppEdit = (closeAfter = true) => {
+    const idx = selectedApps.findIndex(a => a.key === editingAppKey);
+    if (idx < 0) return;
+    selectedApps[idx].group = (appEditGroup?.value || '').trim() || '效率与工具';
+    selectedApps[idx].note = (appEditNote?.value || '').trim().slice(0, 60);
+    syncCatalogHighlights();
+    renderPoster();
+    if (closeAfter) {
+      appEditModal?.close();
+      window.qiaomuToast?.(`已更新「${selectedApps[idx].name}」`);
+    }
+  };
+  appEditSave?.addEventListener('click', () => commitAppEdit(true));
+  appEditNote?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commitAppEdit(true); }
+  });
+  appEditUp?.addEventListener('click', () => {
+    const idx = selectedApps.findIndex(a => a.key === editingAppKey);
+    if (idx <= 0) return;
+    commitAppEdit(false);
+    [selectedApps[idx - 1], selectedApps[idx]] = [selectedApps[idx], selectedApps[idx - 1]];
+    syncCatalogHighlights();
+    renderPoster();
+    openAppEditModal(selectedApps[idx - 1]);
+  });
+  appEditDown?.addEventListener('click', () => {
+    const idx = selectedApps.findIndex(a => a.key === editingAppKey);
+    if (idx < 0 || idx >= selectedApps.length - 1) return;
+    commitAppEdit(false);
+    [selectedApps[idx], selectedApps[idx + 1]] = [selectedApps[idx + 1], selectedApps[idx]];
+    syncCatalogHighlights();
+    renderPoster();
+    openAppEditModal(selectedApps[idx + 1]);
+  });
+  appEditRemove?.addEventListener('click', () => {
+    const idx = selectedApps.findIndex(a => a.key === editingAppKey);
+    if (idx < 0) return;
+    const removed = selectedApps[idx].name;
+    selectedApps.splice(idx, 1);
+    appEditModal?.close();
+    syncCatalogHighlights();
+    renderPoster();
+    window.qiaomuToast?.(`已从海报移除「${removed}」`);
+  });
+
   // Aspect ratio, Layout card style, Font & watermark controls
   for (const btn of document.querySelectorAll('[data-layout]')) {
     btn.addEventListener('click', async () => {
       activeLayout = btn.dataset.layout;
-      for (const other of document.querySelectorAll('[data-layout]')) {
-        const on = other === btn;
-        other.classList.toggle('is-active', on);
-        other.setAttribute('aria-pressed', on ? 'true' : 'false');
-      }
+      syncModeButtons();
       await renderPoster();
-      window.qiaomuToast?.(`已切换为「${btn.querySelector('strong')?.textContent || '新排版'}」`);
+      const label = btn.querySelector('strong')?.textContent || btn.textContent.trim();
+      window.qiaomuToast?.(`已切换为「${label}」`);
     });
   }
   for (const btn of document.querySelectorAll('[data-aspect]')) {
     btn.addEventListener('click', async () => {
       activeAspect = btn.dataset.aspect;
-      for (const other of document.querySelectorAll('[data-aspect]')) {
-        const on = other === btn;
-        other.classList.toggle('is-active', on);
-        other.setAttribute('aria-pressed', on ? 'true' : 'false');
-      }
+      syncModeButtons();
       await renderPoster();
-      window.qiaomuToast?.(`已切换为「${btn.querySelector('strong')?.textContent || '新画幅'}」`);
+      const label = btn.querySelector('strong')?.textContent || btn.textContent.trim();
+      window.qiaomuToast?.(`已切换为「${label}」`);
     });
   }
   for (const btn of document.querySelectorAll('[data-font]')) {
     btn.addEventListener('click', async () => {
       activeFont = btn.dataset.font;
-      for (const other of document.querySelectorAll('[data-font]')) {
-        const on = other === btn;
-        other.classList.toggle('is-active', on);
-        other.setAttribute('aria-pressed', on ? 'true' : 'false');
-      }
+      syncModeButtons();
       window.qiaomuToast?.('正在应用字体…');
       await renderPoster();
       window.qiaomuToast?.(`已切换为「${btn.querySelector('strong')?.textContent || '新字体'}」`);
@@ -1196,34 +1367,11 @@
             other.setAttribute('aria-pressed', on ? 'true' : 'false');
           }
         }
-        if (draft.scrim === 'night' || draft.scrim === 'desktop' || draft.scrim === 'blur') {
-          activeScrim = draft.scrim;
-          for (const other of document.querySelectorAll('[data-scrim]')) other.classList.toggle('is-on', other.dataset.scrim === activeScrim);
-        }
-        if (draft.layout === 'glass' || draft.layout === 'classic') {
-          activeLayout = draft.layout;
-          for (const other of document.querySelectorAll('[data-layout]')) {
-            const on = other.dataset.layout === activeLayout;
-            other.classList.toggle('is-active', on);
-            other.setAttribute('aria-pressed', on ? 'true' : 'false');
-          }
-        }
-        if (draft.font && FONT_PRESETS[draft.font]) {
-          activeFont = draft.font;
-          for (const other of document.querySelectorAll('[data-font]')) {
-            const on = other.dataset.font === activeFont;
-            other.classList.toggle('is-active', on);
-            other.setAttribute('aria-pressed', on ? 'true' : 'false');
-          }
-        }
-        if (draft.aspect === 'portrait' || draft.aspect === 'wide') {
-          activeAspect = draft.aspect;
-          for (const other of document.querySelectorAll('[data-aspect]')) {
-            const on = other.dataset.aspect === activeAspect;
-            other.classList.toggle('is-active', on);
-            other.setAttribute('aria-pressed', on ? 'true' : 'false');
-          }
-        }
+        if (draft.scrim === 'night' || draft.scrim === 'desktop' || draft.scrim === 'blur') activeScrim = draft.scrim;
+        if (draft.layout === 'glass' || draft.layout === 'classic') activeLayout = draft.layout;
+        if (draft.font && FONT_PRESETS[draft.font]) activeFont = draft.font;
+        if (draft.aspect === 'portrait' || draft.aspect === 'wide') activeAspect = draft.aspect;
+        syncModeButtons();
         if (nameInput && draft.name) nameInput.value = draft.name;
         if (titleInput && draft.title) titleInput.value = draft.title;
         if (roleInput && draft.role) roleInput.value = draft.role;

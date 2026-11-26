@@ -11,6 +11,7 @@ import {
   BUILTIN_BUNDLE_TO_CANONICAL,
   BUILTIN_BY_KEY,
   FREE_ALTERNATIVES,
+  PAID_ANNUAL_CNY,
   ROLES,
   SETUP_PACKS,
   STANDARD_THEMES,
@@ -829,6 +830,7 @@ export function createSoftwareServer({
           count: paidApp?.count ?? 0,
           icon: paidApp?.icon || presetIconsMap[paidKey] || null,
           pricing: paidMeta?.pricing || '付费',
+          annualCny: PAID_ANNUAL_CNY[paidKey] ?? 180,
           summary: paidMeta?.summary ?? '',
           inCatalog: Boolean(paidApp),
         },
@@ -1661,6 +1663,7 @@ export function createSoftwareServer({
         const themes = [...new Set([...(a.themes ?? []), ...(builtin?.themes ?? [])])];
         merged.push({
           ...a,
+          cask: a.cask || builtin?.cask || '',
           themes,
           icon: a.icon || presetIconsMap[a.key] || '',
           searchText: buildSearchText(builtin, a.summary),
@@ -1677,6 +1680,7 @@ export function createSoftwareServer({
           key: k,
           name: b.name,
           count: 0,
+          cask: b.cask ?? '',
           categories: [themeToGroup[firstTheme] ?? '效率与工具'],
           themes: b.themes ?? [],
           icon: presetIconsMap[k] || '',

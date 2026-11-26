@@ -1298,12 +1298,20 @@ for (const el of document.querySelectorAll('[data-width]')) {
   if (/^\d{1,3}(\.\d+)?%$/.test(el.dataset.width || '')) el.style.width = el.dataset.width;
 }
 
-// Live filter on /alternatives
+// Live filter + Interactive Subscription Savings Calculator on /alternatives
 const altHub = document.querySelector('[data-alt-hub]');
 if (altHub) {
   let activeGroup = '';
   const searchInput = document.getElementById('alt-search');
   const items = [...altHub.querySelectorAll('[data-alt-item]')];
+  const pickedPaid = new Set();
+  const totalEl = document.getElementById('alt-calc-total');
+  const countEl = document.getElementById('alt-calc-count');
+  const outEl = document.getElementById('alt-calc-out');
+  const brewEl = document.getElementById('alt-calc-brew');
+  const cmdLabelEl = document.getElementById('alt-calc-cmd-label');
+  const clearBtn = document.getElementById('alt-calc-clear');
+
   const applyAltFilter = () => {
     const q = (searchInput?.value || '').trim().toLowerCase();
     for (const li of items) {
@@ -1320,6 +1328,96 @@ if (altHub) {
     });
   }
   searchInput?.addEventListener('input', applyAltFilter);
+
+  const collectPickedDetails = () => {
+    let total = 0;
+    const paidNames = [];
+    const altApps = new Map();
+    const casks = new Set();
+    for (const li of items) {
+      const key = li.dataset.paidKey;
+      const isPicked = pickedPaid.has(key);
+      li.classList.toggle('is-picked', isPicked);
+      const btn = li.querySelector('[data-alt-pick]');
+      if (btn) btn.setAttribute('aria-pressed', isPicked ? 'true' : 'false');
+      if (!isPicked) continue;
+      total += Number(li.dataset.annual || 0);
+      paidNames.push(li.dataset.paidName || key);
+      try {
+        const alts = JSON.parse(li.dataset.altJson || '[]');
+        // Primary recommended replacement (first alt, plus any additional with brew cask)
+        const primary = alts[0];
+        if (primary) {
+          altApps.set(primary.key, primary);
+          if (primary.cask) casks.add(primary.cask);
+          else {
+            const withCask = alts.find(x => x.cask);
+            if (withCask) { altApps.set(withCask.key, withCask); casks.add(withCask.cask); }
+          }
+        }
+      } catch {}
+    }
+    return { total, paidNames, altApps: [...altApps.values()], casks: [...casks] };
+  };
+
+  const syncAltCalc = () => {
+    const { total, paidNames, altApps, casks } = collectPickedDetails();
+    if (totalEl) totalEl.textContent = '¥' + total.toLocaleString('zh-CN');
+    if (countEl) countEl.textContent = `已选 ${paidNames.length} 款付费软件`;
+    if (clearBtn) clearBtn.hidden = paidNames.length === 0;
+    if (outEl && brewEl) {
+      outEl.hidden = paidNames.length === 0;
+      if (paidNames.length) {
+        brewEl.textContent = casks.length
+          ? `brew install --cask ${casks.join(' ')}`
+          : `# 已选平替推荐：${altApps.map(a => a.name).join('、')}（可点击「加入装机清单」查看官网）`;
+        if (cmdLabelEl) {
+          cmdLabelEl.textContent = casks.length
+            ? `专属开源平替一键安装命令（${casks.length} 款 Homebrew Cask）`
+            : `已为你匹配 ${altApps.length} 款推荐开源平替`;
+        }
+      }
+    }
+  };
+
+  for (const btn of altHub.querySelectorAll('[data-alt-pick]')) {
+    btn.addEventListener('click', () => {
+      const k = btn.dataset.altPick;
+      if (pickedPaid.has(k)) pickedPaid.delete(k);
+      else pickedPaid.add(k);
+      syncAltCalc();
+    });
+  }
+  for (const presetBtn of altHub.querySelectorAll('[data-alt-preset]')) {
+    presetBtn.addEventListener('click', () => {
+      pickedPaid.clear();
+      for (const k of (presetBtn.dataset.altPreset || '').split(',').map(s => s.trim()).filter(Boolean)) {
+        pickedPaid.add(k);
+      }
+      syncAltCalc();
+      showToast('已套用省钱方案，可一键复制平替装机命令');
+    });
+  }
+  clearBtn?.addEventListener('click', () => { pickedPaid.clear(); syncAltCalc(); });
+  document.getElementById('alt-calc-copy-cmd')?.addEventListener('click', (e) => {
+    if (brewEl?.textContent) copy(brewEl.textContent, e.currentTarget, '命令已复制');
+  });
+  document.getElementById('alt-calc-to-kit')?.addEventListener('click', () => {
+    const { altApps } = collectPickedDetails();
+    for (const a of altApps) addToKit(a);
+    showToast(`已将 ${altApps.length} 款开源平替加入装机清单`);
+  });
+  document.getElementById('alt-calc-copy-bill')?.addEventListener('click', (e) => {
+    const { total, paidNames, altApps, casks } = collectPickedDetails();
+    const lines = [
+      `我在「乔木软件推荐」测了一下 Mac 订阅费省钱账单：`,
+      `把 ${paidNames.join('、')}（共 ${paidNames.length} 款付费软件）换成开源/免费平替 ${altApps.map(a => a.name).join('、')}，每年预计可省约 ¥${total.toLocaleString('zh-CN')}！`,
+      ...(casks.length ? ['', `一键安装平替：brew install --cask ${casks.join(' ')}`] : []),
+      '',
+      `来算算你的 Mac 一年能省多少：${location.origin}/alternatives`,
+    ];
+    copy(lines.join('\n'), e.currentTarget, '账单已复制');
+  });
 }
 
 // Smooth Back-to-Top button on long pages
