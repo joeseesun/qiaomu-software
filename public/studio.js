@@ -122,18 +122,17 @@
     try { localStorage.setItem(OWNED_KEY, JSON.stringify(list.slice(0, 30))); } catch {}
   }
 
-  function loadImage(url, cache) {
+  function loadImage(url, cache, key = url) {
     if (!url) return Promise.resolve(null);
-    if (cache.has(url)) return Promise.resolve(cache.get(url));
+    if (cache.has(key)) return Promise.resolve(cache.get(key));
     return new Promise(resolve => {
       const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => { cache.set(url, img); resolve(img); };
+      img.onload = () => { cache.set(key, img); resolve(img); };
       img.onerror = () => resolve(null);
       img.src = url;
     });
   }
-  const loadIconImage = (hash) => hash ? loadImage('/icons/' + hash + '.webp', iconImages) : Promise.resolve(null);
+  const loadIconImage = (hash) => hash ? loadImage('/icons/' + hash + '.webp', iconImages, hash) : Promise.resolve(null);
 
   function roundedRect(c, x, y, w, h, r) {
     c.beginPath();
