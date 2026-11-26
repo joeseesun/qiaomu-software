@@ -781,6 +781,7 @@ dialog .button { margin-top: 12px; min-width: 96px; }
   .share-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   .share-actions > :first-child { grid-column: 1 / -1; }
   .compare-form { flex-direction: column; align-items: stretch; padding: 14px; }
+  .compare-form input { flex: 0 0 auto; width: 100%; min-height: 44px; }
   .compare-vs { text-align: center; }
   .overlap-bar { flex-wrap: wrap; }
   .overlap-bar > span { min-width: 110px; font-size: .8rem; }
