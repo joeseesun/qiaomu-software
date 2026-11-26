@@ -151,7 +151,7 @@ ${analytics}
       <kbd aria-hidden="true">/</kbd>
       <div id="header-suggest" class="suggest-menu" role="listbox" hidden></div>
     </form>
-    <a class="button primary header-make${current === 'make' || current === 'studio' ? ' is-current' : ''}" href="/make">${glyph('plus')}做一张</a>
+    <a class="button primary header-make${current === 'make' || current === 'studio' ? ' is-current' : ''}" href="/studio">${glyph('plus')}做一张</a>
   </div>
 </header>
 <main id="main">${main}</main>
@@ -309,7 +309,7 @@ function makeBand() {
   <div class="make-band">
     <div class="make-copy">
       <h2 id="make-title">晒出你 Mac 上真正在用的软件</h2>
-      <p>可以在网页直接粘贴应用列表 10 秒生成海报；也可以装好 Mac Skill，让助手自动扫描 Spotlight 真实使用记录和本机独有图标。</p>
+      <p>不用装 Skill！直接在网页点选大家提交过的软件、从 20 张高清壁纸挑一张、填上名字 30 秒生成同款海报；也支持 Mac Skill 自动扫描本机 Spotlight 使用记录。</p>
       <div class="actions"><a class="button primary" href="/studio">${glyph('plus')}网页直接制作</a><a class="button secondary" href="/make">Mac Skill 完整教程${glyph('arrow')}</a></div>
     </div>
     <div class="make-install"><p class="command-label">${glyph('terminal')}或者在 Mac 终端安装 Skill</p>${installBlock()}</div>
@@ -828,86 +828,146 @@ export function tastePage({ origin, umamiId, topApps = [], stats }) {
   });
 }
 
-export function studioPage({ origin, umamiId, topApps = [], categories = [], roles = [], stats }) {
-  const defaultCats = categories.length ? categories : ['效率', '开发', '写作', 'AI', '设计', '影音', '系统', '沟通'];
+export function studioPage({ origin, umamiId, catalogApps = [], wallpapers = [], themes = [], categories = [], roles = [], stats }) {
+  const defaultCats = categories.length ? categories : ['AI 与开发', '浏览与沟通', '写作与办公', '效率与工具', '创作'];
+  const currentYear = new Date().getFullYear();
+  const compactCatalog = catalogApps.map(a => ({
+    key: a.key,
+    name: a.name,
+    count: a.count,
+    group: a.categories?.[0] ?? '效率与工具',
+    themes: a.themes ?? [],
+    icon: a.icon ?? '',
+    summary: a.summary ?? '',
+    isSystem: Boolean(a.is_system),
+  }));
+
   return frame({
-    title: '网页制作你的软件海报',
-    description: '无需安装工具，粘贴应用列表 10 秒自动匹配全站共识图标，在浏览器里合成并发布你的专属 Mac 软件海报。',
+    title: '在线制作你的 Mac 软件推荐海报',
+    description: '不用装 Skill！直接点选站内大家提交过的 Mac 软件，从 20 张精选高清壁纸里挑一张，填上名字 30 秒生成同款推荐海报。',
     origin, umamiId, path: '/studio', current: 'studio', extraScript: studioAsset, main: `
 <section class="shell page-head studio-head">
   <div>
-    <h1>网页制作软件海报</h1>
-    <p class="lede">在浏览器里直接合成 1600×900 高清海报，支持粘贴 <code>ls /Applications</code> 10 秒批量导入并复用全站共识图标。如果想自动扫描本机使用频率，也可以用 <a class="text-link" href="/make">Mac Skill${glyph('arrow')}</a>。</p>
+    <h1>不用 Skill，30 秒在线生成同款海报</h1>
+    <p class="lede">三步搞定：<strong>① 点选大家提交过的软件</strong> → <strong>② 从 20 张精选摄影壁纸挑一张</strong> → <strong>③ 填上你的名字</strong>，直接出高清 PNG 或发布到画廊。需要自动扫描本机使用天数也可用 <a class="text-link" href="/make">Mac Skill${glyph('arrow')}</a>。</p>
     ${statLine(stats)}
   </div>
 </section>
-<section class="shell studio-layout" id="studio-root">
-  <div class="studio-stage">
+<section class="shell studio-v2" id="studio-root">
+  <!-- Live Full-Width Poster Preview + Name-only Publish Bar -->
+  <div class="studio-preview-card">
     <div class="studio-canvas-wrap">
       <canvas id="studio-canvas" width="1600" height="900" aria-label="软件推荐海报实时预览"></canvas>
     </div>
-    <div class="studio-card">
-      <h2>1. 背景与海报信息</h2>
-      <div class="studio-wallpapers">
-        <label class="button secondary small studio-file-btn">${glyph('upload')}上传我的壁纸<input type="file" id="studio-bg-file" accept="image/*" hidden></label>
-        <div class="preset-row" role="group" aria-label="内置暗色壁纸">
-          <button type="button" class="preset-btn is-active" data-preset="amber" aria-pressed="true">琥珀暗夜</button>
-          <button type="button" class="preset-btn" data-preset="ocean" aria-pressed="false">深海暮色</button>
-          <button type="button" class="preset-btn" data-preset="forest" aria-pressed="false">松林微光</button>
-          <button type="button" class="preset-btn" data-preset="slate" aria-pressed="false">极简碳灰</button>
-        </div>
-      </div>
-      <div class="studio-fields">
-        <label><span>海报标题</span><input type="text" id="studio-title" maxlength="34" value="我的 Mac 常用软件" placeholder="例如：2026 独立开发主力清单"></label>
-        <label><span>署名</span><input type="text" id="studio-name" maxlength="40" placeholder="你的昵称或网名"></label>
-        <label><span>身份标签（可选）</span>
-          <input type="text" id="studio-role" maxlength="16" list="studio-role-list" placeholder="如：独立开发者、设计师">
-          <datalist id="studio-role-list">${roles.map(r => `<option value="${esc(r)}">`).join('')}</datalist>
-        </label>
-        <label><span>可见范围</span>
-          <select id="studio-visibility">
-            <option value="public">发布到公开画廊（计入软件榜票数）</option>
-            <option value="link">仅拿到链接的人可见（不计票）</option>
-          </select>
-        </label>
+    <div class="studio-quick-publish">
+      <div class="studio-name-field">
+        <label class="sr" for="studio-name">你的名字（署名）</label>
+        <input type="text" id="studio-name" maxlength="40" placeholder="③ 输入你的名字（署名），如：小乔">
       </div>
       <div class="actions studio-publish-actions">
-        <button type="button" class="button primary" id="studio-publish">${glyph('sparkles')}发布海报</button>
-        <button type="button" class="button secondary" id="studio-download">${glyph('download')}仅下载 PNG</button>
+        <button type="button" class="button primary" id="studio-publish">${glyph('sparkles')}生成并发布到画廊</button>
+        <button type="button" class="button secondary" id="studio-download">${glyph('download')}仅下载高清 PNG</button>
       </div>
-      <p id="studio-status" class="studio-status" role="status"></p>
     </div>
-    <div class="studio-card" id="studio-history-card" hidden>
-      <h2>本机发布过的海报（可原地更新或撤回）</h2>
-      <ul class="studio-history" id="studio-history"></ul>
-    </div>
-  </div>
-  <div class="studio-sidebar">
-    <div class="studio-card">
-      <h2>2. 挑选软件（<span class="num" id="studio-app-count">0</span> / 48）</h2>
-      <details class="studio-paste-box">
-        <summary>${glyph('zap')}10 秒批量导入本机应用（粘贴 ls /Applications）</summary>
-        <div class="studio-paste-inner">
-          <div class="command command-compact"><span class="command-prompt" aria-hidden="true">$</span><code id="studio-scan-cmd">${esc(scanCmd)}</code><button type="button" class="button secondary small" data-copy="studio-scan-cmd">${glyph('copy')}复制</button></div>
-          <textarea id="studio-paste-input" rows="3" placeholder="把终端输出粘贴在这里，自动匹配全站共识图标并过滤系统自带应用"></textarea>
-          <button type="button" class="button primary small" id="studio-paste-btn">解析并批量加入</button>
+    <p id="studio-status" class="studio-status" role="status"></p>
+    <details class="studio-advanced">
+      <summary>${glyph('edit')}进阶设置（可选：改海报标题、身份标签、仅链接分享、给软件写推荐理由）</summary>
+      <div class="studio-advanced-body">
+        <div class="studio-fields">
+          <label><span>海报标题</span><input type="text" id="studio-title" maxlength="34" value="${currentYear} 我推荐的 Mac 软件" placeholder="例如：2026 独立开发主力清单"></label>
+          <label><span>身份标签（可选）</span>
+            <input type="text" id="studio-role" maxlength="16" list="studio-role-list" placeholder="如：独立开发者、设计师">
+            <datalist id="studio-role-list">${roles.map(r => `<option value="${esc(r)}">`).join('')}</datalist>
+          </label>
+          <label><span>可见范围</span>
+            <select id="studio-visibility">
+              <option value="public">发布到公开画廊（计入软件榜票数）</option>
+              <option value="link">仅拿到链接的人可见（不计票）</option>
+            </select>
+          </label>
+          <label><span>壁纸暗度</span>
+            <select id="studio-scrim">
+              <option value="desktop">标准通透（推荐，同款质感）</option>
+              <option value="night">深邃暗夜（压暗更多，文字更醒目）</option>
+            </select>
+          </label>
         </div>
-      </details>
-      <div class="studio-add-row">
-        <div class="studio-search-box">
-          <input type="search" id="studio-app-search" maxlength="60" placeholder="搜索站内软件或直接输入名称" autocomplete="off">
-          <div id="studio-suggest" class="suggest-menu" role="listbox" hidden></div>
+        <div class="studio-selected-editor">
+          <h3>已选软件微调（可改分类或写 60 字推荐理由）</h3>
+          <ul class="studio-selected-list" id="studio-selected-list"></ul>
         </div>
-        <select id="studio-default-cat" aria-label="默认分类">${defaultCats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}</select>
-        <button type="button" class="button secondary small" id="studio-add-custom">${glyph('plus')}添加</button>
       </div>
-      ${topApps.length ? `<div class="studio-quick">
-        <p class="studio-quick-label">点选快速加入：</p>
-        <div class="studio-quick-chips">${topApps.slice(0, 20).map(app => `<button type="button" class="taste-chip small-chip" data-studio-pick="${esc(JSON.stringify({ name: app.name, key: app.key, group: app.categories?.[0] ?? '效率', icon: app.icon ?? '' }))}">${appIcon(app, 'sm')}<span>${esc(app.name)}</span></button>`).join('')}</div>
-      </div>` : ''}
-      <ul class="studio-selected-list" id="studio-selected-list"></ul>
-    </div>
+    </details>
   </div>
+
+  <!-- Step 1: Pick Existing Submitted Software -->
+  <div class="studio-card">
+    <div class="studio-step-head">
+      <div>
+        <h2>① 点选大家提交过的软件（已选 <span class="num" id="studio-app-count">0</span> / 48）</h2>
+        <p class="kit-sub">直接点图标即可加入海报，自动复用全站高清共识图标并按分类排好版。</p>
+      </div>
+      <div class="actions">
+        <button type="button" class="button secondary small" id="studio-pick-hot">${glyph('sparkles')}一键勾选热门 12 款</button>
+        <button type="button" class="button secondary small" id="studio-clear-apps">清空已选</button>
+      </div>
+    </div>
+    <div class="studio-picker-tools">
+      <div class="studio-search-box">
+        <input type="search" id="studio-app-search" maxlength="60" placeholder="筛选已有软件，或输入任意新软件名回车添加" autocomplete="off">
+      </div>
+      <select id="studio-default-cat" aria-label="新增软件默认分类">${defaultCats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}</select>
+      <button type="button" class="button secondary small" id="studio-add-custom">${glyph('plus')}添加自定义软件</button>
+    </div>
+    ${themes.length ? `<div class="studio-theme-bar" id="studio-theme-bar" role="group" aria-label="按场景筛选软件">
+      <button type="button" class="filter-pill is-on" data-studio-theme="">全部 (${compactCatalog.length})</button>
+      ${themes.map(t => `<button type="button" class="filter-pill" data-studio-theme="${esc(t.id)}">${esc(t.name)} (${t.count})</button>`).join('')}
+    </div>` : ''}
+    <ul class="studio-catalog-grid" id="studio-catalog-grid">
+      ${compactCatalog.map(app => `<li><button type="button" class="studio-pick-card" data-catalog-key="${esc(app.key)}" data-catalog-themes="${esc(app.themes.join(','))}" aria-pressed="false">
+        <span class="pick-check" aria-hidden="true">✓</span>
+        ${appIcon(app, 'md')}
+        <span class="pick-name">${esc(app.name)}</span>
+        <span class="pick-meta num">${app.count} 票</span>
+      </button></li>`).join('')}
+    </ul>
+    <details class="studio-paste-box">
+      <summary>${glyph('zap')}嫌一个个点太慢？粘贴 ls /Applications 10 秒批量勾选本机软件</summary>
+      <div class="studio-paste-inner">
+        <div class="command command-compact"><span class="command-prompt" aria-hidden="true">$</span><code id="studio-scan-cmd">${esc(scanCmd)}</code><button type="button" class="button secondary small" data-copy="studio-scan-cmd">${glyph('copy')}复制</button></div>
+        <textarea id="studio-paste-input" rows="3" placeholder="把终端输出粘贴在这里，自动匹配全站共识图标并过滤系统自带应用"></textarea>
+        <button type="button" class="button primary small" id="studio-paste-btn">解析并批量加入</button>
+      </div>
+    </details>
+  </div>
+
+  <!-- Step 2: 20 Curated Unsplash Wallpapers + Custom Upload -->
+  <div class="studio-card">
+    <div class="studio-step-head">
+      <div>
+        <h2>② 挑一张高清背景壁纸（20 张 Unsplash 精选）</h2>
+        <p class="kit-sub">点一下立刻切换背景，也可以上传你自己的桌面壁纸（纯本地合成，不上传原图）。</p>
+      </div>
+      <div class="actions">
+        <button type="button" class="button secondary small" id="studio-random-bg">${glyph('shuffle')}随机换一张</button>
+        <label class="button secondary small studio-file-btn">${glyph('upload')}上传自己的壁纸<input type="file" id="studio-bg-file" accept="image/*" hidden></label>
+      </div>
+    </div>
+    <ul class="wallpaper-grid" id="studio-wallpaper-grid">
+      ${wallpapers.map((wp, idx) => `<li><button type="button" class="wallpaper-tile${idx === 0 ? ' is-active' : ''}" data-wallpaper-url="${esc(wp.url)}" data-wallpaper-id="${esc(wp.id)}" aria-pressed="${idx === 0 ? 'true' : 'false'}">
+        <img src="${esc(wp.thumb)}" alt="${esc(wp.name)}" width="320" height="180" loading="lazy" decoding="async">
+        <span>${esc(wp.name)}</span>
+      </button></li>`).join('')}
+    </ul>
+  </div>
+
+  <div class="studio-card" id="studio-history-card" hidden>
+    <h2>本机发布过的海报（可原地更新或撤回）</h2>
+    <ul class="studio-history" id="studio-history"></ul>
+  </div>
+
+  <script type="application/json" id="studio-catalog-data">${safeJsonScript(compactCatalog)}</script>
+  <script type="application/json" id="studio-wallpapers-data">${safeJsonScript(wallpapers)}</script>
   <script type="application/json" id="studio-cats">${safeJsonScript(defaultCats)}</script>
 </section>`,
   });

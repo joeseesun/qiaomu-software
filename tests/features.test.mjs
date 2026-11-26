@@ -320,4 +320,15 @@ test('need search, decision filters, free alternatives, community reviews, setup
   assert.match(cmpHtml, /Raycast vs Alfred/);
   assert.match(cmpHtml, /只装 Raycast · 1/);
   assert.match(cmpHtml, /两款都装 · 1/);
+
+  // /studio renders 20 curated wallpapers and full catalog pick cards, and serves wallpaper WebP files
+  const studioHtml = await html('/studio');
+  assert.match(studioHtml, /20 张 Unsplash 精选/);
+  assert.match(studioHtml, /data-wallpaper-url="\/wallpapers\/01-goldengate\.webp"/);
+  assert.match(studioHtml, /data-catalog-key="raycast"/);
+  const wpRes = await page('/wallpapers/01-goldengate.webp');
+  assert.equal(wpRes.status, 200);
+  assert.equal(wpRes.headers.get('content-type'), 'image/webp');
+  assert.match(wpRes.headers.get('cache-control'), /immutable/);
+  assert.equal((await page('/wallpapers/..%2Fsite.css')).status, 404);
 });

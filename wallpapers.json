@@ -1,0 +1,22 @@
+[
+  { "id": "01-goldengate", "name": "金门大桥", "url": "/wallpapers/01-goldengate.webp", "thumb": "/wallpapers/01-goldengate-thumb.webp" },
+  { "id": "02-yosemite", "name": "优胜美地", "url": "/wallpapers/02-yosemite.webp", "thumb": "/wallpapers/02-yosemite-thumb.webp" },
+  { "id": "03-aurora", "name": "冰岛极光", "url": "/wallpapers/03-aurora.webp", "thumb": "/wallpapers/03-aurora-thumb.webp" },
+  { "id": "04-fuji", "name": "樱花富士", "url": "/wallpapers/04-fuji.webp", "thumb": "/wallpapers/04-fuji-thumb.webp" },
+  { "id": "05-tokyo", "name": "东京霓虹", "url": "/wallpapers/05-tokyo.webp", "thumb": "/wallpapers/05-tokyo-thumb.webp" },
+  { "id": "06-alps", "name": "阿尔卑斯", "url": "/wallpapers/06-alps.webp", "thumb": "/wallpapers/06-alps-thumb.webp" },
+  { "id": "07-forest", "name": "晨雾松林", "url": "/wallpapers/07-forest.webp", "thumb": "/wallpapers/07-forest-thumb.webp" },
+  { "id": "08-fjord", "name": "日出海滩", "url": "/wallpapers/08-fjord.webp", "thumb": "/wallpapers/08-fjord-thumb.webp" },
+  { "id": "09-coast", "name": "航拍海浪", "url": "/wallpapers/09-coast.webp", "thumb": "/wallpapers/09-coast-thumb.webp" },
+  { "id": "10-stars", "name": "星空银河", "url": "/wallpapers/10-stars.webp", "thumb": "/wallpapers/10-stars-thumb.webp" },
+  { "id": "11-desert", "name": "云雾林海", "url": "/wallpapers/11-desert.webp", "thumb": "/wallpapers/11-desert-thumb.webp" },
+  { "id": "12-lake", "name": "镜湖木桥", "url": "/wallpapers/12-lake.webp", "thumb": "/wallpapers/12-lake-thumb.webp" },
+  { "id": "13-nyc", "name": "城市天际线", "url": "/wallpapers/13-nyc.webp", "thumb": "/wallpapers/13-nyc-thumb.webp" },
+  { "id": "14-autumn", "name": "高地暮光", "url": "/wallpapers/14-autumn.webp", "thumb": "/wallpapers/14-autumn-thumb.webp" },
+  { "id": "15-kyoto", "name": "京都古街", "url": "/wallpapers/15-kyoto.webp", "thumb": "/wallpapers/15-kyoto-thumb.webp" },
+  { "id": "16-iceland", "name": "冰岛瀑布", "url": "/wallpapers/16-iceland.webp", "thumb": "/wallpapers/16-iceland-thumb.webp" },
+  { "id": "17-clouds", "name": "巍峨雪山", "url": "/wallpapers/17-clouds.webp", "thumb": "/wallpapers/17-clouds-thumb.webp" },
+  { "id": "18-arch", "name": "仰望摩天楼", "url": "/wallpapers/18-arch.webp", "thumb": "/wallpapers/18-arch-thumb.webp" },
+  { "id": "19-ocean", "name": "深海微光", "url": "/wallpapers/19-ocean.webp", "thumb": "/wallpapers/19-ocean-thumb.webp" },
+  { "id": "20-snow", "name": "幽蓝雪峰", "url": "/wallpapers/20-snow.webp", "thumb": "/wallpapers/20-snow-thumb.webp" }
+]

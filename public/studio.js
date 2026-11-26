@@ -1,6 +1,8 @@
 // Browser-based Mac Software Poster Studio (/studio)
-// Renders a 1600x900 dark-desktop poster locally on Canvas, reuses site consensus icons,
-// supports publishing (POST), in-place updating (PUT), and withdrawal (DELETE) via localStorage tokens.
+// 1:1 native macOS poster aesthetic (matching qiaomu-mac-software render.js & demo.webp):
+// - 20 curated Unsplash desktop wallpapers (self-hosted WebP) + custom upload
+// - Click-to-pick from all existing community-submitted apps with real consensus icons
+// - Enter your name and publish (POST) / update in-place (PUT) / download PNG in 30s!
 
 (() => {
   const root = document.getElementById('studio-root');
@@ -16,19 +18,27 @@
   const nameInput = document.getElementById('studio-name');
   const roleInput = document.getElementById('studio-role');
   const visSelect = document.getElementById('studio-visibility');
+  const scrimSelect = document.getElementById('studio-scrim');
   const publishBtn = document.getElementById('studio-publish');
   const downloadBtn = document.getElementById('studio-download');
   const statusEl = document.getElementById('studio-status');
   const appSearch = document.getElementById('studio-app-search');
-  const suggestMenu = document.getElementById('studio-suggest');
   const defaultCatSelect = document.getElementById('studio-default-cat');
   const addCustomBtn = document.getElementById('studio-add-custom');
   const selectedListEl = document.getElementById('studio-selected-list');
   const appCountEl = document.getElementById('studio-app-count');
   const historyCard = document.getElementById('studio-history-card');
   const historyList = document.getElementById('studio-history');
+  const pickHotBtn = document.getElementById('studio-pick-hot');
+  const clearAppsBtn = document.getElementById('studio-clear-apps');
+  const randomBgBtn = document.getElementById('studio-random-bg');
+  const pasteInput = document.getElementById('studio-paste-input');
+  const pasteBtn = document.getElementById('studio-paste-btn');
 
-  const categories = JSON.parse(document.getElementById('studio-cats')?.textContent || '["效率","开发","写作","AI","设计","影音"]');
+  const catalog = JSON.parse(document.getElementById('studio-catalog-data')?.textContent || '[]');
+  const wallpapers = JSON.parse(document.getElementById('studio-wallpapers-data')?.textContent || '[]');
+  const catalogByKey = new Map(catalog.map(a => [a.key, a]));
+
   const tilePalettes = [
     ['#6f86b8', '#3d4f7a'],
     ['#6fa89a', '#36675c'],
@@ -40,18 +50,13 @@
     ['#8f8f9c', '#55555f'],
   ];
 
-  const presets = {
-    amber: ['#1b140d', '#0f1218', '#ffb547', 0.24],
-    ocean: ['#0c1c2c', '#0b0e14', '#4aa8d8', 0.22],
-    forest: ['#0e1d18', '#0c0f13', '#52b788', 0.2],
-    slate: ['#1c2028', '#0c0e12', '#a8b0c0', 0.14],
-  };
-
-  let activePreset = 'amber';
-  let bgBitmap = null;
-  let editing = null; // { id, token } when editing an existing browser-created poster
+  let bgImage = null; // HTMLImageElement or ImageBitmap
+  let activeWallpaperUrl = wallpapers[0]?.url || '';
+  let activeThemeFilter = '';
+  let editing = null; // { id, token }
   const selectedApps = []; // [{ name, key, group, note, icon }]
   const iconImages = new Map(); // hash -> HTMLImageElement
+  const wallpaperCache = new Map(); // url -> HTMLImageElement
 
   function loadOwned() {
     try { return JSON.parse(localStorage.getItem(OWNED_KEY) || '[]'); }
@@ -61,16 +66,20 @@
     try { localStorage.setItem(OWNED_KEY, JSON.stringify(list.slice(0, 30))); } catch {}
   }
 
-  function loadIconImage(hash) {
-    if (!hash) return Promise.resolve(null);
-    if (iconImages.has(hash)) return Promise.resolve(iconImages.get(hash));
+  function loadImage(url, cache) {
+    if (!url) return Promise.resolve(null);
+    if (cache.has(url)) return Promise.resolve(cache.get(url));
     return new Promise(resolve => {
       const img = new Image();
       img.crossOrigin = 'anonymous';
-      img.onload = () => { iconImages.set(hash, img); resolve(img); };
+      img.onload = () => { cache.set(url, img); resolve(img); };
       img.onerror = () => resolve(null);
-      img.src = '/icons/' + hash + '.webp';
+      img.src = url;
     });
+  }
+
+  function loadIconImage(hash) {
+    return hash ? loadImage('/icons/' + hash + '.webp', iconImages) : Promise.resolve(null);
   }
 
   function roundedRect(c, x, y, w, h, r) {
@@ -80,9 +89,11 @@
   }
 
   function drawCover(img, w, h) {
-    const scale = Math.max(w / img.width, h / img.height);
-    const dw = img.width * scale;
-    const dh = img.height * scale;
+    const iw = img.naturalWidth || img.width;
+    const ih = img.naturalHeight || img.height;
+    const scale = Math.max(w / iw, h / ih);
+    const dw = iw * scale;
+    const dh = ih * scale;
     ctx.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
   }
 
@@ -96,179 +107,205 @@
     const g = ctx.createLinearGradient(x + inset, y + inset, x + inset + s, y + inset + s);
     g.addColorStop(0, a);
     g.addColorStop(1, b);
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.45)';
+    ctx.shadowBlur = 12;
+    ctx.shadowOffsetY = 4;
     roundedRect(ctx, x + inset, y + inset, s, s, s * 0.23);
     ctx.fillStyle = g;
     ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(255,255,255,0.22)';
     ctx.lineWidth = 1.5;
+    roundedRect(ctx, x + inset, y + inset, s, s, s * 0.23);
     ctx.stroke();
-    ctx.fillStyle = 'rgba(255,255,255,0.95)';
-    ctx.font = `600 ${Math.round(s * 0.48)}px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif`;
+    ctx.fillStyle = 'rgba(255,255,255,0.96)';
+    ctx.font = `600 ${Math.round(s * 0.46)}px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(letter, x + size / 2, y + size / 2 + 1);
   }
 
-  function truncateText(text, maxWidth) {
-    if (ctx.measureText(text).width <= maxWidth) return text;
-    let out = text;
-    while (out.length > 1 && ctx.measureText(out + '…').width > maxWidth) {
-      out = out.slice(0, -1);
+  function fitText(text, fontTemplate, maxSize, minSize, maxWidth) {
+    let size = maxSize;
+    ctx.font = fontTemplate(size);
+    while (ctx.measureText(text).width > maxWidth && size > minSize) {
+      size -= 1;
+      ctx.font = fontTemplate(size);
     }
-    return out + '…';
+    let out = text;
+    if (ctx.measureText(out).width > maxWidth) {
+      const chars = Array.from(out);
+      while (chars.length > 1 && ctx.measureText(chars.join('') + '…').width > maxWidth) chars.pop();
+      out = chars.join('') + '…';
+    }
+    return { text: out, size };
   }
 
+  function groupIntoRows(apps) {
+    const groups = new Map();
+    for (const app of apps) {
+      const label = app.group || '效率与工具';
+      if (!groups.has(label)) groups.set(label, []);
+      groups.get(label).push(app);
+    }
+    const rows = [];
+    for (const [label, list] of groups) {
+      for (let i = 0; i < list.length; i += 10) {
+        rows.push({ label: i === 0 ? label : '', apps: list.slice(i, i + 10) });
+      }
+    }
+    return rows;
+  }
+
+  // Matches qiaomu-mac-software/scripts/render.js & demo.webp visual design!
   async function renderPoster() {
-    const W = 1600;
-    const H = 900;
+    if (!bgImage && activeWallpaperUrl) {
+      bgImage = await loadImage(activeWallpaperUrl, wallpaperCache);
+    }
     await Promise.all(selectedApps.map(a => loadIconImage(a.icon)));
 
-    // 1. Background wallpaper or preset
-    if (bgBitmap) {
-      drawCover(bgBitmap, W, H);
-      ctx.fillStyle = 'rgba(10, 12, 16, 0.42)';
-      ctx.fillRect(0, 0, W, H);
-    } else {
-      const [c1, c2, glow, alpha] = presets[activePreset] || presets.amber;
-      const bgGrad = ctx.createLinearGradient(0, 0, W, H);
-      bgGrad.addColorStop(0, c1);
-      bgGrad.addColorStop(1, c2);
-      ctx.fillStyle = bgGrad;
-      ctx.fillRect(0, 0, W, H);
-
-      const rad = ctx.createRadialGradient(W * 0.22, H * 0.18, 40, W * 0.22, H * 0.18, W * 0.72);
-      rad.addColorStop(0, glow);
-      rad.addColorStop(1, 'rgba(12,14,18,0)');
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      ctx.fillStyle = rad;
-      ctx.fillRect(0, 0, W, H);
-      ctx.restore();
+    const W = 1600;
+    const rows = groupIntoRows(selectedApps);
+    const rowHeight = rows.length <= 5 ? Math.min(146, Math.floor(650 / Math.max(1, rows.length))) : 118;
+    const footerH = 46;
+    const H = Math.max(900, 214 + footerH + rows.length * rowHeight);
+    if (canvas.width !== W || canvas.height !== H) {
+      canvas.width = W;
+      canvas.height = H;
     }
 
-    // 2. Frosted dark glass main card
-    const padX = 64;
-    const padY = 56;
-    const cardW = W - padX * 2;
-    const cardH = H - padY * 2;
-    ctx.save();
-    roundedRect(ctx, padX, padY, cardW, cardH, 28);
-    ctx.fillStyle = 'rgba(14, 17, 23, 0.80)';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.14)';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    ctx.restore();
+    // 1. Full-bleed photography wallpaper + authentic macOS scrim gradients
+    ctx.fillStyle = '#0f1822';
+    ctx.fillRect(0, 0, W, H);
 
-    // 3. Header row
-    const title = titleInput.value.trim() || '我的 Mac 常用软件';
-    const author = nameInput.value.trim() || '匿名 Mac 用户';
-    const role = roleInput.value.trim();
+    if (bgImage) {
+      drawCover(bgImage, W, H);
+      const isNight = scrimSelect?.value === 'night';
+      ctx.fillStyle = `rgba(10, 18, 28, ${isNight ? 0.56 : 0.30})`;
+      ctx.fillRect(0, 0, W, H);
 
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'alphabetic';
-    ctx.fillStyle = 'rgba(255,255,255,0.96)';
-    ctx.font = '700 44px -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans SC", sans-serif';
-    ctx.fillText(truncateText(title, 960), padX + 46, padY + 86);
+      const leftGrad = ctx.createLinearGradient(0, 0, W, 0);
+      leftGrad.addColorStop(0, 'rgba(10, 18, 33, 0.42)');
+      leftGrad.addColorStop(1, 'rgba(18, 28, 41, 0.14)');
+      ctx.fillStyle = leftGrad;
+      ctx.fillRect(0, 0, W, H);
 
-    ctx.fillStyle = 'rgba(255,255,255,0.68)';
-    ctx.font = '500 22px -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans SC", sans-serif';
-    const metaText = `${author}${role ? ' · ' + role : ''} · 共推荐 ${selectedApps.length} 款软件`;
-    ctx.fillText(metaText, padX + 46, padY + 126);
+      const topGrad = ctx.createLinearGradient(0, 0, 0, H);
+      topGrad.addColorStop(0, 'rgba(8, 13, 20, 0.48)');
+      topGrad.addColorStop(0.35, 'rgba(8, 13, 20, 0.12)');
+      topGrad.addColorStop(1, 'rgba(8, 13, 20, 0.44)');
+      ctx.fillStyle = topGrad;
+      ctx.fillRect(0, 0, W, H);
+    } else {
+      const g = ctx.createLinearGradient(0, 0, W, H);
+      g.addColorStop(0, '#102938');
+      g.addColorStop(1, '#263f3d');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+    }
 
-    // Top-right badge
-    ctx.textAlign = 'right';
-    ctx.fillStyle = '#ffb547';
-    ctx.font = '600 20px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';
-    ctx.fillText('乔木软件推荐', padX + cardW - 46, padY + 82);
-    ctx.fillStyle = 'rgba(255,255,255,0.48)';
-    ctx.font = '500 17px "SF Mono", ui-monospace, Menlo, monospace';
-    ctx.fillText('software.qiaomu.ai', padX + cardW - 46, padY + 114);
+    const white = '#fffbf4';
+    const quiet = 'rgba(255, 251, 244, 0.78)';
+    const serifFont = (sz) => `700 ${sz}px "Songti SC", "STSongti-SC-Bold", "Noto Serif CJK SC", "PingFang SC", Georgia, serif`;
+    const uiFont = (sz, weight = 600) => `${weight} ${sz}px -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Noto Sans SC", sans-serif`;
 
-    // Divider line
-    ctx.strokeStyle = 'rgba(255,255,255,0.10)';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(padX + 46, padY + 152);
-    ctx.lineTo(padX + cardW - 46, padY + 152);
-    ctx.stroke();
+    // Helper for crisp text with drop shadow matching render.js
+    const drawShadowText = (text, x, y, align = 'left', color = white) => {
+      ctx.save();
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.82)';
+      ctx.shadowBlur = 10;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 2;
+      ctx.fillStyle = color;
+      ctx.textAlign = align;
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(text, x, y);
+      ctx.restore();
+    };
 
-    // 4. App Grid
-    const gridX = padX + 46;
-    const gridY = padY + 180;
-    const gridW = cardW - 92;
-    const gridH = cardH - 224;
+    // 2. Title heading
+    const rawTitle = titleInput.value.trim() || `${new Date().getFullYear()} 我推荐的 Mac 软件`;
+    const fittedHeading = fitText(rawTitle, serifFont, 68, 40, W - 128);
+    ctx.font = serifFont(fittedHeading.size);
+    drawShadowText(fittedHeading.text, 64, 132, 'left', white);
 
-    if (!selectedApps.length) {
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = 'rgba(255,255,255,0.52)';
-      ctx.font = '500 26px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';
-      ctx.fillText('在右侧挑选你的 Mac 软件，这里会实时合成海报', W / 2, gridY + gridH / 2);
+    // 3. Footer signature & domain
+    const author = nameInput.value.trim();
+    const role = roleInput?.value.trim() || '';
+    if (author) {
+      const sep = /[A-Za-z0-9]$/.test(author) ? ' ' : '';
+      const footerLeft = `${author}${sep}的推荐${role ? ' · ' + role : ''}`;
+      ctx.font = uiFont(20, 500);
+      drawShadowText(footerLeft, 64, H - 30, 'left', quiet);
+    }
+    ctx.font = uiFont(19, 500);
+    drawShadowText('software.qiaomu.ai', W - 64, H - 30, 'right', quiet);
+
+    // 4. Empty hint when no apps selected yet
+    if (!rows.length) {
+      ctx.font = uiFont(28, 500);
+      drawShadowText('在下方点选你常用的 Mac 软件，这里会实时生成同款桌面海报', W / 2, H / 2 + 12, 'center', 'rgba(255,251,244,0.82)');
       return;
     }
 
-    const n = selectedApps.length;
-    let cols = 4;
-    if (n <= 6) cols = 3;
-    else if (n <= 12) cols = 4;
-    else if (n <= 20) cols = 5;
-    else if (n <= 30) cols = 6;
-    else cols = 8;
-    const rows = Math.ceil(n / cols);
-    const gapX = cols >= 6 ? 18 : 24;
-    const gapY = rows >= 5 ? 16 : 22;
-    const cellW = (gridW - gapX * (cols - 1)) / cols;
-    const cellH = Math.min(132, (gridH - gapY * (rows - 1)) / rows);
-    const compact = cols >= 6 || rows >= 5;
-    const iconSize = compact ? Math.min(54, cellH - 24) : Math.min(68, cellH - 28);
+    // 5. Grouped horizontal app rows (identical rhythm to demo.webp!)
+    const labelW = 198;
+    const cols = Math.max(6, ...rows.map(r => r.apps.length));
+    const step = (W - labelW - 128) / cols;
+    const iconSize = Math.min(86, Math.round(rowHeight * 0.62));
 
-    selectedApps.forEach((app, idx) => {
-      const col = idx % cols;
-      const row = Math.floor(idx / cols);
-      const x = gridX + col * (cellW + gapX);
-      const y = gridY + row * (cellH + gapY);
-
-      roundedRect(ctx, x, y, cellW, cellH, 16);
-      ctx.fillStyle = 'rgba(255,255,255,0.06)';
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-
-      const ix = x + 16;
-      const iy = y + (cellH - iconSize) / 2;
-      const img = app.icon ? iconImages.get(app.icon) : null;
-      if (img) {
-        ctx.drawImage(img, ix, iy, iconSize, iconSize);
-      } else {
-        drawFallbackTile(ix, iy, iconSize, app.name);
+    rows.forEach((row, rowIdx) => {
+      const rowTop = 186 + rowIdx * rowHeight;
+      if (row.label) {
+        const fittedLabel = fitText(row.label, serifFont, 30, 18, labelW - 22);
+        ctx.font = serifFont(fittedLabel.size);
+        drawShadowText(fittedLabel.text, 64, rowTop + iconSize * 0.60, 'left', white);
       }
 
-      const tx = ix + iconSize + 14;
-      const maxTw = cellW - (tx - x) - 14;
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = 'rgba(255,255,255,0.95)';
-      ctx.font = `600 ${compact ? 17 : 21}px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif`;
-      const nameY = app.note && !compact ? y + cellH * 0.34 : y + cellH * 0.40;
-      ctx.fillText(truncateText(app.name, maxTw), tx, nameY);
+      row.apps.forEach((app, colIdx) => {
+        const cx = 64 + labelW + step * (colIdx + 0.5);
+        const ix = cx - iconSize / 2;
+        const iy = rowTop;
+        const img = app.icon ? iconImages.get(app.icon) : null;
+        if (img) {
+          ctx.save();
+          ctx.shadowColor = 'rgba(0,0,0,0.42)';
+          ctx.shadowBlur = 14;
+          ctx.shadowOffsetY = 5;
+          ctx.drawImage(img, ix, iy, iconSize, iconSize);
+          ctx.restore();
+        } else {
+          drawFallbackTile(ix, iy, iconSize, app.name);
+        }
 
-      ctx.fillStyle = '#ffb547';
-      ctx.font = `500 ${compact ? 13 : 15}px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif`;
-      const subText = app.note && !compact ? `「${app.note}」` : app.group;
-      if (app.note && !compact) {
-        ctx.fillStyle = 'rgba(255,255,255,0.62)';
-        ctx.fillText(truncateText(subText, maxTw), tx, y + cellH * 0.68);
-      } else {
-        ctx.fillText(truncateText(app.group, maxTw), tx, y + cellH * 0.68);
-      }
+        const fittedName = fitText(app.name, (sz) => uiFont(sz, 600), 19, 13, step - 10);
+        ctx.font = uiFont(fittedName.size, 600);
+        drawShadowText(fittedName.text, cx, iy + iconSize + 26, 'center', white);
+      });
     });
   }
 
-  function renderSelectedList() {
+  function syncCatalogHighlights() {
     appCountEl.textContent = String(selectedApps.length);
+    const chosenKeys = new Set(selectedApps.map(a => a.key));
+    for (const btn of document.querySelectorAll('[data-catalog-key]')) {
+      const on = chosenKeys.has(btn.dataset.catalogKey);
+      btn.classList.toggle('is-selected', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+    renderSelectedEditor();
+  }
+
+  function renderSelectedEditor() {
     selectedListEl.replaceChildren();
+    if (!selectedApps.length) {
+      const li = document.createElement('li');
+      li.className = 'kit-sub';
+      li.textContent = '还没有选中任何软件。在下方点选软件后，这里可以微调分类或补写推荐理由。';
+      selectedListEl.append(li);
+      return;
+    }
     selectedApps.forEach((app, idx) => {
       const li = document.createElement('li');
       li.className = 'studio-app-item';
@@ -291,33 +328,26 @@
       rm.textContent = '移除';
       rm.addEventListener('click', () => {
         selectedApps.splice(idx, 1);
-        renderSelectedList();
+        syncCatalogHighlights();
         renderPoster();
       });
       top.append(name, rm);
 
       const controls = document.createElement('div');
       controls.className = 'studio-app-controls';
-
       const catInput = document.createElement('input');
       catInput.type = 'text';
       catInput.maxLength = 14;
       catInput.value = app.group;
       catInput.placeholder = '分类';
-      catInput.addEventListener('input', () => {
-        app.group = catInput.value.trim() || '效率';
-        renderPoster();
-      });
+      catInput.addEventListener('input', () => { app.group = catInput.value.trim() || '效率与工具'; renderPoster(); });
 
       const noteInput = document.createElement('input');
       noteInput.type = 'text';
       noteInput.maxLength = 60;
       noteInput.value = app.note || '';
       noteInput.placeholder = '写一句推荐理由（可选，最多 60 字）';
-      noteInput.addEventListener('input', () => {
-        app.note = noteInput.value.trim();
-        renderPoster();
-      });
+      noteInput.addEventListener('input', () => { app.note = noteInput.value.trim(); });
 
       controls.append(catInput, noteInput);
       li.append(top, controls);
@@ -328,20 +358,164 @@
   function addApp(item) {
     if (selectedApps.length >= 48) {
       statusEl.textContent = '每张海报最多选择 48 款软件。';
-      return;
+      return false;
     }
-    const norm = item.name.trim().toLowerCase();
-    if (!norm || selectedApps.some(a => a.name.toLowerCase() === norm)) return;
+    const key = (item.key || item.name.trim().toLowerCase());
+    if (!key || selectedApps.some(a => a.key === key)) return false;
     selectedApps.push({
       name: item.name.trim(),
-      key: item.key || norm,
-      group: item.group || defaultCatSelect.value || '效率',
+      key,
+      group: item.group || defaultCatSelect.value || '效率与工具',
       note: item.note || '',
       icon: item.icon || '',
     });
-    renderSelectedList();
+    return true;
+  }
+
+  function toggleCatalogApp(key) {
+    const idx = selectedApps.findIndex(a => a.key === key);
+    if (idx >= 0) {
+      selectedApps.splice(idx, 1);
+    } else {
+      const found = catalogByKey.get(key);
+      if (found) addApp(found);
+    }
+    syncCatalogHighlights();
     renderPoster();
   }
+
+  function filterCatalogGrid() {
+    const q = (appSearch?.value || '').trim().toLowerCase();
+    for (const btn of document.querySelectorAll('[data-catalog-key]')) {
+      const key = btn.dataset.catalogKey;
+      const app = catalogByKey.get(key);
+      const themes = (btn.dataset.catalogThemes || '').split(',').filter(Boolean);
+      const matchTheme = !activeThemeFilter || themes.includes(activeThemeFilter);
+      const matchQ = !q || key.includes(q) || (app?.name || '').toLowerCase().includes(q) || (app?.summary || '').toLowerCase().includes(q);
+      btn.closest('li').hidden = !(matchTheme && matchQ);
+    }
+  }
+
+  async function selectWallpaper(url, tileBtn = null) {
+    activeWallpaperUrl = url;
+    bgImage = await loadImage(url, wallpaperCache);
+    for (const other of document.querySelectorAll('[data-wallpaper-url]')) {
+      const on = tileBtn ? other === tileBtn : other.dataset.wallpaperUrl === url;
+      other.classList.toggle('is-active', on);
+      other.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+    renderPoster();
+  }
+
+  // Click cards in full catalog grid
+  for (const btn of document.querySelectorAll('[data-catalog-key]')) {
+    btn.addEventListener('click', () => toggleCatalogApp(btn.dataset.catalogKey));
+  }
+
+  // Theme filter bar
+  for (const btn of document.querySelectorAll('[data-studio-theme]')) {
+    btn.addEventListener('click', () => {
+      activeThemeFilter = btn.dataset.studioTheme;
+      for (const other of document.querySelectorAll('[data-studio-theme]')) {
+        other.classList.toggle('is-on', other === btn);
+      }
+      filterCatalogGrid();
+    });
+  }
+
+  appSearch?.addEventListener('input', filterCatalogGrid);
+
+  const addCustomFromInput = () => {
+    const val = appSearch.value.trim();
+    if (!val) return;
+    const match = catalogByKey.get(val.toLowerCase());
+    if (match) addApp(match);
+    else addApp({ name: val, key: val.toLowerCase(), group: defaultCatSelect.value || '效率与工具' });
+    appSearch.value = '';
+    filterCatalogGrid();
+    syncCatalogHighlights();
+    renderPoster();
+  };
+  addCustomBtn?.addEventListener('click', addCustomFromInput);
+  appSearch?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); addCustomFromInput(); }
+  });
+
+  // One-click pick top 12 non-system apps
+  pickHotBtn?.addEventListener('click', () => {
+    const picks = catalog.filter(a => !a.isSystem).slice(0, 12);
+    for (const a of picks) addApp(a);
+    syncCatalogHighlights();
+    renderPoster();
+  });
+
+  clearAppsBtn?.addEventListener('click', () => {
+    selectedApps.length = 0;
+    syncCatalogHighlights();
+    renderPoster();
+  });
+
+  // 20 Wallpaper picker tiles + Random button + Custom file upload
+  for (const btn of document.querySelectorAll('[data-wallpaper-url]')) {
+    btn.addEventListener('click', () => selectWallpaper(btn.dataset.wallpaperUrl, btn));
+  }
+
+  randomBgBtn?.addEventListener('click', () => {
+    if (!wallpapers.length) return;
+    const pool = wallpapers.filter(w => w.url !== activeWallpaperUrl);
+    const next = pool[Math.floor(Math.random() * pool.length)] || wallpapers[0];
+    selectWallpaper(next.url);
+  });
+
+  bgFileInput?.addEventListener('change', async () => {
+    const file = bgFileInput.files?.[0];
+    if (!file) return;
+    try {
+      bgImage = await createImageBitmap(file);
+      activeWallpaperUrl = '';
+      for (const other of document.querySelectorAll('[data-wallpaper-url]')) {
+        other.classList.remove('is-active');
+        other.setAttribute('aria-pressed', 'false');
+      }
+      renderPoster();
+    } catch {
+      statusEl.textContent = '无法读取该图片，请换一张 JPG/PNG/WebP 壁纸。';
+    }
+  });
+
+  [titleInput, nameInput, roleInput, scrimSelect].forEach(el => el?.addEventListener('input', renderPoster));
+  scrimSelect?.addEventListener('change', renderPoster);
+
+  // Batch paste import from `ls /Applications`
+  pasteBtn?.addEventListener('click', async () => {
+    const rawText = pasteInput?.value?.trim();
+    if (!rawText) { pasteInput?.focus(); return; }
+    pasteBtn.disabled = true;
+    statusEl.textContent = '正在匹配站内图标并分类…';
+    try {
+      const res = await fetch('/api/v1/parse-apps', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ rawText }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '解析失败');
+      let added = 0;
+      for (const item of data.items) {
+        if (item.isSystem) continue;
+        if (selectedApps.length >= 24 && added >= 24) break;
+        if (addApp({ name: item.name, key: item.key, group: item.group, icon: item.icon })) added++;
+      }
+      pasteInput.value = '';
+      syncCatalogHighlights();
+      renderPoster();
+      statusEl.textContent = added ? `已自动导入 ${added} 款软件并匹配共识图标！` : '没有新增软件（可能已在清单中或均为系统自带应用）。';
+    } catch (err) {
+      statusEl.textContent = err.message || '解析失败。';
+    } finally {
+      pasteBtn.disabled = false;
+    }
+  });
 
   function renderHistory() {
     const owned = loadOwned();
@@ -377,7 +551,7 @@
           saveOwned(loadOwned().filter(x => x.id !== item.id));
           if (editing?.id === item.id) {
             editing = null;
-            publishBtn.textContent = '发布海报';
+            publishBtn.textContent = '生成并发布到画廊';
           }
           renderHistory();
           statusEl.textContent = '已撤回该海报。';
@@ -409,162 +583,36 @@
       }
       publishBtn.textContent = '更新这张海报';
       statusEl.textContent = `正在编辑海报「${data.title}」，保存后原链接保持不变。`;
-      renderSelectedList();
+      syncCatalogHighlights();
       renderPoster();
     } catch (err) {
       statusEl.textContent = err.message;
     }
   }
 
-  // Preset wallpaper switching
-  for (const btn of document.querySelectorAll('[data-preset]')) {
-    btn.addEventListener('click', () => {
-      bgBitmap = null;
-      activePreset = btn.dataset.preset;
-      for (const other of document.querySelectorAll('[data-preset]')) {
-        const active = other === btn;
-        other.classList.toggle('is-active', active);
-        other.setAttribute('aria-pressed', active ? 'true' : 'false');
-      }
-      renderPoster();
-    });
-  }
-
-  bgFileInput?.addEventListener('change', async () => {
-    const file = bgFileInput.files?.[0];
-    if (!file) return;
-    try {
-      bgBitmap = await createImageBitmap(file);
-      for (const other of document.querySelectorAll('[data-preset]')) {
-        other.classList.remove('is-active');
-        other.setAttribute('aria-pressed', 'false');
-      }
-      renderPoster();
-    } catch {
-      statusEl.textContent = '无法读取该图片，请换一张 JPG/PNG/WebP 壁纸。';
-    }
-  });
-
-  [titleInput, nameInput, roleInput].forEach(el => el?.addEventListener('input', renderPoster));
-
-  // Quick-pick catalog chips
-  for (const btn of document.querySelectorAll('[data-studio-pick]')) {
-    btn.addEventListener('click', () => {
-      addApp(JSON.parse(btn.dataset.studioPick));
-    });
-  }
-
-  // Batch paste import from `ls /Applications`
-  const pasteInput = document.getElementById('studio-paste-input');
-  const pasteBtn = document.getElementById('studio-paste-btn');
-  pasteBtn?.addEventListener('click', async () => {
-    const rawText = pasteInput?.value?.trim();
-    if (!rawText) { pasteInput?.focus(); return; }
-    pasteBtn.disabled = true;
-    statusEl.textContent = '正在匹配站内图标并分类…';
-    try {
-      const res = await fetch('/api/v1/parse-apps', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ rawText }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || '解析失败');
-      let added = 0;
-      for (const item of data.items) {
-        if (item.isSystem) continue;
-        if (selectedApps.length >= 24 && added >= 24) break;
-        const before = selectedApps.length;
-        addApp({ name: item.name, key: item.key, group: item.group, icon: item.icon });
-        if (selectedApps.length > before) added++;
-      }
-      pasteInput.value = '';
-      statusEl.textContent = added ? `已自动导入 ${added} 款软件并匹配共识图标！可继续调整分类或补写推荐理由。` : '没有新增软件（可能已在清单中或均为系统自带应用）。';
-    } catch (err) {
-      statusEl.textContent = err.message || '解析失败。';
-    } finally {
-      pasteBtn.disabled = false;
-    }
-  });
-
-  // Search suggest inside studio
-  let suggestTimer = null;
-  appSearch?.addEventListener('input', () => {
-    clearTimeout(suggestTimer);
-    const q = appSearch.value.trim();
-    if (!q) { suggestMenu.hidden = true; return; }
-    suggestTimer = setTimeout(async () => {
-      try {
-        const res = await fetch('/api/v1/suggest?q=' + encodeURIComponent(q));
-        if (!res.ok) return;
-        const data = await res.json();
-        suggestMenu.replaceChildren();
-        if (!data.apps?.length) { suggestMenu.hidden = true; return; }
-        for (const a of data.apps) {
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'suggest-item';
-          if (a.icon) {
-            const img = document.createElement('img');
-            img.src = a.icon;
-            img.alt = '';
-            img.width = 24;
-            img.height = 24;
-            btn.append(img);
-          }
-          const span = document.createElement('span');
-          span.className = 'suggest-item-name';
-          span.textContent = a.name;
-          const meta = document.createElement('span');
-          meta.className = 'suggest-item-meta';
-          meta.textContent = a.category || `${a.count} 张海报`;
-          btn.append(span, meta);
-          btn.addEventListener('click', () => {
-            addApp({ name: a.name, key: a.key, group: a.category || defaultCatSelect.value, icon: a.iconHash || '' });
-            appSearch.value = '';
-            suggestMenu.hidden = true;
-          });
-          suggestMenu.append(btn);
-        }
-        suggestMenu.hidden = false;
-      } catch {}
-    }, 140);
-  });
-
-  const addCustomFromInput = () => {
-    const val = appSearch.value.trim();
-    if (!val) return;
-    addApp({ name: val, group: defaultCatSelect.value || '效率' });
-    appSearch.value = '';
-    suggestMenu.hidden = true;
-  };
-  addCustomBtn?.addEventListener('click', addCustomFromInput);
-  appSearch?.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); addCustomFromInput(); }
-  });
-  document.addEventListener('click', e => {
-    if (!appSearch?.closest('.studio-search-box')?.contains(e.target)) suggestMenu.hidden = true;
-  });
-
   downloadBtn?.addEventListener('click', async () => {
+    if (!selectedApps.length) {
+      statusEl.textContent = '请先在下方点选至少 1 款软件。';
+      return;
+    }
     await renderPoster();
     const url = canvas.toDataURL('image/png');
     const a = document.createElement('a');
     a.href = url;
-    a.download = (titleInput.value.trim() || 'mac-software') + '.png';
+    const prefix = nameInput.value.trim() ? nameInput.value.trim() + '-' : '';
+    a.download = prefix + (titleInput.value.trim() || 'mac-software') + '.png';
     a.click();
   });
 
   publishBtn?.addEventListener('click', async () => {
-    const title = titleInput.value.trim();
     const name = nameInput.value.trim();
-    const role = roleInput.value.trim();
-    if (!name) { statusEl.textContent = '请填写署名。'; nameInput.focus(); return; }
-    if (!title) { statusEl.textContent = '请填写海报标题。'; titleInput.focus(); return; }
-    if (!selectedApps.length) { statusEl.textContent = '请至少选择 1 款软件。'; return; }
+    const title = titleInput.value.trim() || `${new Date().getFullYear()} 我推荐的 Mac 软件`;
+    const role = roleInput?.value.trim() || '';
+    if (!selectedApps.length) { statusEl.textContent = '请先在下方点选至少 1 款软件（也可以点「一键勾选热门 12 款」）。'; return; }
+    if (!name) { statusEl.textContent = '请输入你的名字（署名），就能立刻发布海报！'; nameInput.focus(); return; }
 
     publishBtn.disabled = true;
-    statusEl.textContent = editing ? '正在更新海报…' : '正在合成并上传海报…';
+    statusEl.textContent = editing ? '正在更新海报…' : '正在生成高清海报并发布…';
     try {
       await renderPoster();
       const dataUrl = canvas.toDataURL('image/png');
@@ -573,10 +621,10 @@
         name,
         title,
         role: role || undefined,
-        visibility: visSelect.value,
+        visibility: visSelect?.value || 'public',
         apps: selectedApps.map(a => ({
           name: a.name,
-          group: a.group || '效率',
+          group: a.group || '效率与工具',
           ...(a.note ? { note: a.note } : {}),
           ...(a.icon ? { icon: a.icon } : {}),
         })),
@@ -607,20 +655,27 @@
     }
   });
 
-  // Init: carry over from /taste, or load ?edit=:id from URL
+  // Init: carry over from /taste, or load ?edit=:id, or pre-select top 6 so preview looks alive immediately!
   renderHistory();
   const editId = new URLSearchParams(location.search).get('edit');
   if (editId) {
     const found = loadOwned().find(x => x.id === editId);
     if (found) loadForEdit(found.id, found.token);
   } else {
+    let loaded = false;
     try {
       const carried = JSON.parse(sessionStorage.getItem(TASTE_CARRY_KEY) || 'null');
       if (Array.isArray(carried) && carried.length) {
         sessionStorage.removeItem(TASTE_CARRY_KEY);
         for (const a of carried) addApp(a);
+        loaded = true;
       }
     } catch {}
+    if (!loaded && catalog.length) {
+      // Pre-select top 6 popular apps so visitors immediately see a gorgeous live poster preview!
+      for (const a of catalog.filter(x => !x.isSystem).slice(0, 6)) addApp(a);
+    }
   }
+  syncCatalogHighlights();
   renderPoster();
 })();

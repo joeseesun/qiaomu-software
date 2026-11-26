@@ -37,6 +37,12 @@ import {
 } from './views.mjs';
 
 const directory = fileURLToPath(new URL('./public/', import.meta.url));
+const wallpapersDir = fileURLToPath(new URL('./public/wallpapers/', import.meta.url));
+const wallpapersList = (() => {
+  try { return JSON.parse(readFileSync(new URL('./wallpapers.json', import.meta.url), 'utf8')); }
+  catch { return []; }
+})();
+const wallpaperFilePattern = /^\/wallpapers\/([a-z0-9-]+\.webp)$/;
 const maxImage = 8 * 1024 * 1024;
 const maxIcon = 64 * 1024;
 const maxIconTotal = 1536 * 1024;
@@ -1352,9 +1358,17 @@ export function createSoftwareServer({
     }
 
     if (read && pathname === '/studio') {
-      const topApps = apps({ sort: 'top', hideSystem: true, limit: 36 });
+      const catalogApps = apps({ sort: 'top', limit: 200 });
       const cats = getCategories.all('').slice(0, 12).map(c => c.name);
-      return page(studioPage({ ...context, topApps, categories: cats, roles: ROLES, stats: getStats.get() }));
+      return page(studioPage({
+        ...context,
+        catalogApps,
+        wallpapers: wallpapersList,
+        themes: getThemeCounts(),
+        categories: cats,
+        roles: ROLES,
+        stats: getStats.get(),
+      }));
     }
 
     if (read && pathname === '/make') return page(makePage({ ...context, stats: getStats.get() }));
@@ -1377,6 +1391,17 @@ export function createSoftwareServer({
       return send(res, 200, 'application/xml; charset=utf-8',
         '<?xml version="1.0" encoding="utf-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' +
         links.map(link => '<url><loc>' + escape(origin + link) + '</loc></url>').join('') + '</urlset>');
+    }
+
+    const wpRoute = pathname.match(wallpaperFilePattern);
+    if (read && wpRoute) {
+      try {
+        const data = readFileSync(join(wallpapersDir, wpRoute[1]));
+        return send(res, 200, 'image/webp', method === 'HEAD' ? '' : data, {
+          'cache-control': 'public, max-age=31536000, immutable',
+          'content-length': data.length,
+        });
+      } catch { throw new RequestError(404, '找不到这张壁纸。'); }
     }
 
     if (read && media.has(pathname)) {

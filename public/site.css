@@ -407,7 +407,40 @@ input[type="search"]::-webkit-search-decoration { -webkit-appearance: none; }
 .taste-bar-fill { height: 100%; border-radius: 999px; background: var(--amber); }
 .taste-similar-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 16px; }
 
-/* Web Poster Studio */
+/* Web Poster Studio v2 (3-Step Click-to-Pick + 20 Unsplash Wallpapers) */
+.studio-v2 { display: grid; gap: 22px; padding-bottom: 72px; }
+.studio-preview-card { display: grid; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); }
+.studio-canvas-wrap { border-radius: 14px; overflow: hidden; background: var(--bg); border: 1px solid var(--line-strong); box-shadow: 0 24px 64px rgb(0 0 0 / .55); }
+.studio-canvas-wrap canvas { display: block; width: 100%; height: auto; }
+.studio-quick-publish { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.studio-name-field { flex: 1 1 280px; min-width: 0; }
+.studio-name-field input { width: 100%; min-height: 46px; font-size: 1rem; border-color: rgb(255 181 71 / .4); background: var(--bg); }
+.studio-advanced { padding: 12px 14px; border-radius: 12px; background: var(--bg); border: 1px solid var(--line); }
+.studio-advanced summary { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: .9rem; font-weight: 500; color: var(--text-2); }
+.studio-advanced summary:hover { color: var(--text-strong); }
+.studio-advanced-body { margin-top: 14px; display: grid; gap: 16px; }
+.studio-selected-editor h3 { font-size: .95rem; margin-bottom: 10px; color: var(--text-2); }
+.studio-step-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 12px 20px; }
+.studio-picker-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; }
+.studio-picker-tools .studio-search-box { flex: 1 1 260px; }
+.studio-picker-tools select { min-height: 40px; padding: 6px 28px 6px 10px; font-size: .88rem; }
+.studio-theme-bar { display: flex; flex-wrap: wrap; gap: 6px; }
+.studio-catalog-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 10px; max-height: 460px; overflow-y: auto; padding: 2px; }
+.studio-pick-card { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; padding: 12px 8px 10px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); text-align: center; transition: border-color .15s, background-color .15s, transform .15s var(--ease); }
+.studio-pick-card:hover { background: var(--surface-2); border-color: var(--line-strong); }
+.studio-pick-card.is-selected { border-color: var(--amber); background: rgb(255 181 71 / .12); }
+.pick-check { position: absolute; top: 6px; right: 6px; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700; background: var(--amber); color: var(--amber-ink); opacity: 0; transform: scale(.7); transition: opacity .15s, transform .15s; }
+.studio-pick-card.is-selected .pick-check { opacity: 1; transform: scale(1); }
+.pick-name { color: var(--text-strong); font-size: .82rem; font-weight: 500; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pick-meta { color: var(--text-2); font-size: .72rem; }
+.wallpaper-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.wallpaper-tile { position: relative; display: block; width: 100%; padding: 0; border-radius: 10px; overflow: hidden; border: 2px solid transparent; background: var(--bg); transition: border-color .15s, transform .15s var(--ease); }
+.wallpaper-tile img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; }
+.wallpaper-tile span { position: absolute; left: 0; right: 0; bottom: 0; padding: 14px 8px 5px; background: linear-gradient(0deg, rgb(0 0 0 / .78), transparent); color: #fff; font-size: .78rem; font-weight: 500; text-align: left; }
+.wallpaper-tile:hover { transform: translateY(-2px); border-color: var(--line-strong); }
+.wallpaper-tile.is-active { border-color: var(--amber); box-shadow: 0 0 0 1px var(--amber); }
+
+/* Web Poster Studio legacy card primitives */
 .studio-layout { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 24px; align-items: start; padding-bottom: 72px; }
 .studio-stage, .studio-sidebar { display: grid; gap: 18px; min-width: 0; }
 .studio-canvas-wrap { border-radius: 14px; overflow: hidden; background: var(--surface); border: 1px solid var(--line-strong); box-shadow: 0 24px 64px rgb(0 0 0 / .55); }
