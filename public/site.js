@@ -130,11 +130,12 @@ if (headerKbd && /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAge
 
 const CMDK_QUICK_ACTIONS = [
   { label: '制作我的 Mac 软件海报', sub: '200+ 真实图标 · 20 张壁纸 · 16:9 / 3:4 双画幅', href: '/studio', badge: '制作台' },
+  { label: '付费软件开源平替大全', sub: '37 组 CleanShot / Cursor / Conductor / Bartender 0 元平替', href: '/alternatives', badge: '省钱' },
+  { label: '真实 Mac 生态数据洞察', sub: '实时装机穿透率、黄金搭档组合与开源/Brew 占比', href: '/insights', badge: '洞察' },
   { label: 'AI Harness & Agent 工具精选', sub: 'Paseo、Claude Code、Codex、OpenCode、OpenClaw、Conductor', href: '/apps?theme=harness', badge: '热门' },
-  { label: '新 Mac 5 分钟装机包', sub: '按场景选软件，一键生成 Homebrew 装机脚本', href: '/setup', badge: '装机' },
+  { label: '新 Mac 5 分钟装机包', sub: '6 套场景套餐，一键生成 Homebrew 装机脚本', href: '/setup', badge: '装机' },
   { label: 'Mac 软件体检 & 查漏补缺', sub: '粘贴本机应用列表，找出同频高手都在用的神器', href: '/taste', badge: '体检' },
   { label: '同类软件二选一对比', sub: 'Paseo vs Conductor · Ollama vs LM Studio · Raycast vs Alfred', href: '/compare', badge: '对比' },
-  { label: '开源免费 Mac 软件精选', sub: '零订阅压力，全站开源免费效率工具合集', href: '/apps?pricing=foss', badge: '开源' },
   { label: '随机逛逛一款宝藏软件', sub: '发现站内有真实走心评价的软件', href: '/random', badge: '漫游' },
 ];
 
@@ -1287,8 +1288,35 @@ if (tasteRoot) {
   }
 }
 
-// CSP-safe proportional flex widths (e.g. /compare overlap bar)
+// CSP-safe proportional flex & width values (e.g. /compare overlap bar & /insights bars)
 for (const el of document.querySelectorAll('[data-flex]')) {
   const w = Number(el.dataset.flex);
   if (w > 0) el.style.flex = `${w} 1 0%`;
+}
+for (const el of document.querySelectorAll('[data-width]')) {
+  if (/^\d{1,3}(\.\d+)?%$/.test(el.dataset.width || '')) el.style.width = el.dataset.width;
+}
+
+// Live filter on /alternatives
+const altHub = document.querySelector('[data-alt-hub]');
+if (altHub) {
+  let activeGroup = '';
+  const searchInput = document.getElementById('alt-search');
+  const items = [...altHub.querySelectorAll('[data-alt-item]')];
+  const applyAltFilter = () => {
+    const q = (searchInput?.value || '').trim().toLowerCase();
+    for (const li of items) {
+      const matchG = q ? true : (!activeGroup || li.dataset.group === activeGroup);
+      const matchQ = !q || (li.dataset.search || '').includes(q);
+      li.hidden = !(matchG && matchQ);
+    }
+  };
+  for (const btn of altHub.querySelectorAll('[data-alt-group]')) {
+    btn.addEventListener('click', () => {
+      activeGroup = btn.dataset.altGroup;
+      for (const other of altHub.querySelectorAll('[data-alt-group]')) other.classList.toggle('is-on', other === btn);
+      applyAltFilter();
+    });
+  }
+  searchInput?.addEventListener('input', applyAltFilter);
 }

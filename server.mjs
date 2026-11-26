@@ -23,12 +23,14 @@ import {
 } from './metadata.mjs';
 import { createOgCache, renderAppBadge, renderAppOg } from './og.mjs';
 import {
+  alternativesPage,
   appPage,
   appsPage,
   comparePage,
   errorPage,
   galleryPage,
   home,
+  insightsPage,
   makePage,
   setupPage,
   sharePage,
@@ -755,6 +757,145 @@ export function createSoftwareServer({
   const ogCache = createOgCache(64);
   let processing = 0;
 
+  const getTopPairs = db.prepare(`
+    SELECT a.app_key AS key_a, MIN(a.name) AS name_a,
+      b.app_key AS key_b, MIN(b.name) AS name_b,
+      COUNT(DISTINCT a.share_id) AS count
+    FROM app_mentions AS a
+    JOIN shares AS s ON a.share_id=s.id AND s.visibility='public'
+    JOIN app_mentions AS b ON b.share_id=a.share_id AND a.app_key < b.app_key
+    GROUP BY a.app_key, b.app_key
+    HAVING count >= 2
+    ORDER BY count DESC, a.app_key, b.app_key
+    LIMIT 14
+  `);
+  const getRoleTopApps = db.prepare(`
+    SELECT s.role, m.app_key AS key, MIN(m.name) AS name, COUNT(DISTINCT m.share_id) AS count
+    FROM app_mentions AS m ${publicJoin}
+    WHERE s.role <> ''
+    GROUP BY s.role, m.app_key
+    ORDER BY s.role, count DESC, m.app_key
+  `);
+  const getAvgApps = db.prepare(`
+    SELECT COALESCE(AVG(cnt), 0) AS avg_apps FROM (
+      SELECT COUNT(DISTINCT app_key) AS cnt FROM app_mentions AS m ${publicJoin} GROUP BY m.share_id
+    )
+  `);
+
+  function buildAlternativesDirectory() {
+    const groupOf = (themes) => {
+      const t = themes || [];
+      if (t.includes('harness') || (t.includes('ai') && t.includes('dev'))) return 'ai-dev';
+      if (t.includes('ai')) return 'ai';
+      if (t.includes('media') || t.includes('design')) return 'media';
+      if (t.includes('system') || t.includes('productivity')) return 'system';
+      if (t.includes('dev')) return 'dev';
+      return 'notes';
+    };
+    const rows = [];
+    const freeCasks = new Set();
+    for (const [paidKey, altKeys] of Object.entries(FREE_ALTERNATIVES)) {
+      const paidApp = getAppOrBuiltin(paidKey);
+      const paidMeta = getMeta.get(paidKey) ?? BUILTIN_BY_KEY.get(paidKey);
+      if (!paidApp && !paidMeta) continue;
+      const alts = [];
+      for (const ak of altKeys) {
+        const aApp = getAppOrBuiltin(ak);
+        const aMeta = getMeta.get(ak) ?? BUILTIN_BY_KEY.get(ak);
+        if (!aApp && !aMeta) continue;
+        const cask = aMeta?.cask ?? '';
+        if (cask) freeCasks.add(cask);
+        alts.push({
+          key: ak,
+          name: aApp?.name ?? aMeta?.name ?? ak,
+          count: aApp?.count ?? 0,
+          icon: aApp?.icon || presetIconsMap[ak] || null,
+          pricing: aMeta?.pricing || '开源免费',
+          cask,
+          homepage: aMeta?.homepage ?? '',
+          summary: aMeta?.summary ?? '',
+          inCatalog: Boolean(aApp),
+        });
+      }
+      if (!alts.length) continue;
+      const themes = Array.isArray(paidMeta?.themes)
+        ? paidMeta.themes
+        : String(paidMeta?.themes ?? '').split(',').filter(Boolean);
+      rows.push({
+        group: groupOf(themes),
+        paid: {
+          key: paidKey,
+          name: paidApp?.name ?? paidMeta?.name ?? paidKey,
+          count: paidApp?.count ?? 0,
+          icon: paidApp?.icon || presetIconsMap[paidKey] || null,
+          pricing: paidMeta?.pricing || '付费',
+          summary: paidMeta?.summary ?? '',
+          inCatalog: Boolean(paidApp),
+        },
+        alts,
+      });
+    }
+    rows.sort((a, b) => (b.paid.count - a.paid.count) || a.paid.name.localeCompare(b.paid.name));
+    return { rows, freeCasks: [...freeCasks] };
+  }
+
+  function buildInsightsReport() {
+    const stats = getStats.get();
+    const totalPosters = Math.max(1, stats.posters || 0);
+    const allLive = apps({ sort: 'top', hideSystem: true, limit: 200 });
+    const topPenetration = allLive.slice(0, 14).map(a => ({
+      ...a,
+      pct: Math.min(100, Math.round((a.count / totalPosters) * 100)),
+    }));
+    const fossCount = allLive.filter(a => a.pricing === '开源免费').length;
+    const freeTotalCount = allLive.filter(a => ['开源免费', '免费', '免费增值'].includes(a.pricing)).length;
+    const brewCount = allLive.filter(a => Boolean(a.cask)).length;
+    const fossPct = allLive.length ? Math.round((fossCount / allLive.length) * 100) : 0;
+    const freePct = allLive.length ? Math.round((freeTotalCount / allLive.length) * 100) : 0;
+    const brewPct = allLive.length ? Math.round((brewCount / allLive.length) * 100) : 0;
+    const avgApps = Math.round((getAvgApps.get()?.avg_apps || 0) * 10) / 10;
+
+    const pairs = getTopPairs.all().map(p => ({
+      keyA: p.key_a,
+      nameA: p.name_a,
+      iconA: getApp.get(p.key_a)?.icon || presetIconsMap[p.key_a] || null,
+      keyB: p.key_b,
+      nameB: p.name_b,
+      iconB: getApp.get(p.key_b)?.icon || presetIconsMap[p.key_b] || null,
+      count: p.count,
+      pct: Math.min(100, Math.round((p.count / totalPosters) * 100)),
+    }));
+
+    const themeBreakdown = getThemeCounts({ hideSystem: true }).map(t => ({
+      ...t,
+      pct: allLive.length ? Math.min(100, Math.round((t.count / allLive.length) * 100)) : 0,
+    }));
+
+    const roleMap = new Map();
+    for (const r of getRoleTopApps.all()) {
+      if (!roleMap.has(r.role)) roleMap.set(r.role, []);
+      const list = roleMap.get(r.role);
+      if (list.length < 5) {
+        list.push({ key: r.key, name: r.name, count: r.count, icon: getApp.get(r.key)?.icon || presetIconsMap[r.key] || null });
+      }
+    }
+    const roleBreakdowns = [...roleMap.entries()].slice(0, 6).map(([role, items]) => ({ role, items }));
+
+    return {
+      stats,
+      avgApps,
+      fossCount,
+      fossPct,
+      freePct,
+      brewCount,
+      brewPct,
+      topPenetration,
+      pairs,
+      themeBreakdown,
+      roleBreakdowns,
+    };
+  }
+
   function loadIconBytes(hash) {
     if (!hash) return null;
     const row = getIcon.get(hash);
@@ -1430,6 +1571,23 @@ export function createSoftwareServer({
       return page(setupPage({ ...context, packs: buildSetupPacks(), stats: getStats.get() }));
     }
 
+    if (read && pathname === '/alternatives') {
+      const dir = buildAlternativesDirectory();
+      return page(alternativesPage({ ...context, ...dir, stats: getStats.get() }));
+    }
+
+    if (read && pathname === '/insights') {
+      return page(insightsPage({ ...context, report: buildInsightsReport() }));
+    }
+
+    if (read && pathname === '/api/v1/alternatives') {
+      return publicJson(res, 200, buildAlternativesDirectory());
+    }
+
+    if (read && pathname === '/api/v1/insights') {
+      return publicJson(res, 200, buildInsightsReport());
+    }
+
     const ogAppRoute = pathname.match(/^\/og\/apps\/([^/]+)\.png$/);
     if (read && ogAppRoute) {
       let key;
@@ -1598,6 +1756,8 @@ export function createSoftwareServer({
         `- [开源免费 Mac 软件精选](${origin}/apps?pricing=foss)：零订阅压力的纯开源免费 macOS 软件清单`,
         `- [新 Mac 5 分钟装机包](${origin}/setup)：按场景勾选，一键生成带 Homebrew 自动检测的终端装机脚本`,
         `- [Mac 软件体检 & 查漏补缺](${origin}/taste)：粘贴本机应用列表，自动检测 7 大效率位短板与同频高手神器`,
+        `- [付费软件开源免费平替大全](${origin}/alternatives)：37 组热门付费 Mac / AI 软件（CleanShot X、Cursor、Conductor、Bartender 等）的开源免费替代清单`,
+        `- [真实 Mac 软件生态数据洞察](${origin}/insights)：基于公开真实桌面海报的装机穿透率、黄金搭档组合与开源/Homebrew 占比报告`,
         `- [同类 Mac 软件二选一对比](${origin}/compare)：并排对比票数、定价、Homebrew 命令与真实桌面同时安装比例`,
         `- [在线海报制作台](${origin}/studio)：内置 200+ 真实软件与 AI Harness 图标、20 张高清壁纸、霞鹜文楷等开源字体，支持 16:9 横版与 3:4 竖版`,
         '',
@@ -1700,6 +1860,8 @@ export function createSoftwareServer({
         { path: '/posters', freq: 'daily', prio: '0.9' },
         { path: '/studio', freq: 'weekly', prio: '0.9' },
         { path: '/setup', freq: 'weekly', prio: '0.8' },
+        { path: '/alternatives', freq: 'weekly', prio: '0.9' },
+        { path: '/insights', freq: 'daily', prio: '0.9' },
         { path: '/taste', freq: 'weekly', prio: '0.8' },
         { path: '/compare', freq: 'weekly', prio: '0.8' },
         { path: '/make', freq: 'monthly', prio: '0.7' },

@@ -174,7 +174,7 @@ ${analytics}
   <div class="shell footer-inner">
     <p class="footer-brand"><img src="${markAsset}" width="22" height="22" alt="">乔木软件推荐<span>大家真正在用的 Mac 软件</span></p>
     <nav class="footer-links" aria-label="页脚">
-      <a href="/posters">海报</a><a href="/apps">软件榜</a><a href="/setup">新机装机包</a><a href="/taste">软件体检</a><a href="/compare">软件对比</a><a href="/studio">网页制作</a><a href="/make">Skill 教程</a><a href="/random">随机逛逛</a><a href="/feed.xml">RSS</a><a href="/llms.txt">llms.txt</a><a href="/api/v1/apps">开放 API</a><a href="/privacy">数据与分享说明</a>
+      <a href="/posters">海报</a><a href="/apps">软件榜</a><a href="/alternatives">开源平替</a><a href="/insights">数据洞察</a><a href="/setup">新机装机包</a><a href="/taste">软件体检</a><a href="/compare">软件对比</a><a href="/studio">网页制作</a><a href="/make">Skill 教程</a><a href="/random">随机逛逛</a><a href="/feed.xml">RSS</a><a href="/llms.txt">llms.txt</a><a href="/api/v1/apps">开放 API</a><a href="/privacy">数据与分享说明</a>
       <a href="${skill}">Skill 源码</a><a href="${repo}">网站源码</a><a href="https://x.com/vista8">X</a>
       <button type="button" class="footer-button" data-dialog="follow">关注乔木</button>
       <button type="button" class="footer-button" data-dialog="reward">支持乔木</button>
@@ -287,10 +287,12 @@ export function home({ origin, umamiId, stats, popular = [], rising = false, lat
 </section>`;
 
   const utilityStrip = `<section class="shell utility-strip" aria-label="实用快捷入口">
-  <a class="utility-card" href="/setup"><strong>${glyph('zap')}新 Mac 5 分钟装机包</strong><span>选好场景套餐，一键生成 Homebrew 自动装机脚本</span></a>
-  <a class="utility-card" href="/taste"><strong>${glyph('sparkles')}Mac 软件体检 & 查漏补缺</strong><span>粘贴本机应用列表，看同频高手都在用但你漏掉的神器</span></a>
-  <a class="utility-card" href="/apps?pricing=foss"><strong>${glyph('box')}开源免费软件精选</strong><span>按「开源免费 / 支持 Brew / 隐藏系统自带」快速筛选</span></a>
-  <a class="utility-card" href="/compare"><strong>${glyph('scale')}同类软件二选一对比</strong><span>并排看票数、价格、平替与真实用户同时安装比例</span></a>
+  <a class="utility-card" href="/setup"><strong>${glyph('zap')}新 Mac 5 分钟装机包</strong><span>6 套场景套餐（含 2026 AI Harness 工作站），一键生成 Brew 装机脚本</span></a>
+  <a class="utility-card" href="/alternatives"><strong>${glyph('box')}付费软件开源平替大全</strong><span>37 组热门付费 Mac / AI 工具的 0 元开源平替，一年轻松省下数千元</span></a>
+  <a class="utility-card" href="/insights"><strong>${glyph('sparkles')}真实 Mac 生态数据洞察</strong><span>基于真实桌面海报统计装机穿透率、黄金搭档组合与开源/Brew 占比</span></a>
+  <a class="utility-card" href="/taste"><strong>${glyph('terminal')}Mac 软件体检 & 查漏补缺</strong><span>粘贴本机应用列表，找出同频高手都在用但你漏掉的神器</span></a>
+  <a class="utility-card" href="/compare"><strong>${glyph('scale')}同类软件二选一对比</strong><span>Paseo vs Conductor、Ollama vs LM Studio 等热门软件并排对比</span></a>
+  <a class="utility-card" href="/apps?theme=harness"><strong>${glyph('code')}AI Harness & 工具精选</strong><span>一站浏览 30 款 AI Harness 与 100+ 热门 AI 桌面及本地模型工具</span></a>
 </section>`;
 
   const appsSection = popular.length ? `<section class="shell section" aria-labelledby="popular-title">
@@ -1062,6 +1064,31 @@ export function sharePage({ row, similar = [], origin, umamiId }) {
       ${[...groups].map(([label, apps]) => `<div class="app-group"><h3><a href="${href('/apps', { category: label })}">${esc(label)}</a></h3>
         <ul>${apps.map(app => `<li class="list-app-row"><a class="list-app" href="${appLink(app)}">${appIcon(app, 'md')}<span class="list-app-body"><span class="list-app-name">${esc(app.name)}${app.cask ? ' <span class="mini-tag is-brew">brew</span>' : ''}</span>${app.note ? `<span class="list-app-note">${quoted(app.note)}</span>` : ''}</span></a>${kitButton(app)}</li>`).join('')}</ul></div>`).join('')}
     </section>
+    ${(() => {
+      const shareUrl = origin + '/s/' + row.id;
+      const imgUrl = origin + image(row.id);
+      const mdLines = [
+        `## ${row.title}`,
+        '',
+        `[![${row.title}](${imgUrl})](${shareUrl})`,
+        '',
+        ...[...groups].map(([label, list]) => `- **${label}**：${list.map(a => `[${a.name}](${origin}${appHref(a.key)})`).join(' · ')}`),
+        '',
+        `> 来自 [乔木软件推荐](${shareUrl})`,
+      ];
+      return `<details class="badge-box share-embed-box">
+        <summary>${glyph('code')}嵌入到 GitHub README / 个人博客 /uses 页面（Markdown）</summary>
+        <div class="badge-body">
+          <div class="command-terminal">
+            <div class="command-terminal-bar">
+              <span>Markdown · 可直接贴进 GitHub Profile README / Notion / 博客</span>
+              <button type="button" class="button primary small" data-copy="share-readme-md">${glyph('copy')}复制 Markdown</button>
+            </div>
+            <pre><code id="share-readme-md">${esc(mdLines.join('\n'))}</code></pre>
+          </div>
+        </div>
+      </details>`;
+    })()}
   </div>
   ${similar.length ? `<section class="section shelf-section" aria-labelledby="similar-title">
     <div class="shell section-head"><div><h2 id="similar-title">口味相近的海报</h2><p>推荐了相同软件最多的几张</p></div></div>
@@ -1383,6 +1410,209 @@ export function terms({ origin, umamiId }) {
 <h2>可见范围、更新和撤回</h2><p>公开海报会出现在海报列表、软件榜、RSS 与公开只读 API 中，并给其中的软件计票。仅链接海报只有拿到链接的人能看，不计票。Skill 或浏览器本地保存的凭证可用于随时原地更新（PUT）或撤回（DELETE）海报，撤回后本站停止提供该海报和图片。</p>
 <h2>装机清单、补充点评与访问统计</h2><p>装机清单保存在浏览器 localStorage 中，无需账号，也不会上传服务器。软件详情页的「补充体验/避坑技巧」与「写得好」投票按访问来源哈希防刷，均不影响软件榜的海报票数。本站使用 Umami 统计访问。项目问题请提到 <a href="${issues}">GitHub</a>。</p>
 </article>`,
+  });
+}
+
+export function alternativesPage({ origin, umamiId, rows = [], freeCasks = [], stats }) {
+  const groups = [
+    ['', '全部平替'],
+    ['ai-dev', 'AI Harness & 编程'],
+    ['ai', 'AI 助手与创作'],
+    ['system', '系统增强与效率'],
+    ['media', '截图与影音'],
+    ['dev', '开发与网络'],
+    ['notes', '写作与阅读'],
+  ];
+  const brewAll = freeCasks.length ? 'brew install --cask ' + freeCasks.slice(0, 18).join(' ') : '';
+  const altJsonLd = [
+    {
+      '@context': 'https://schema.org',
+      '@type': 'CollectionPage',
+      name: 'Mac & AI 付费软件免费开源平替大全',
+      url: origin + '/alternatives',
+      inLanguage: 'zh-CN',
+      description: `精选 ${rows.length} 组热门付费 Mac 软件与 AI 工具的开源免费替代方案，涵盖 CleanShot X、Cursor、Conductor、Bartender、1Password、Wispr Flow 等。`,
+    },
+    {
+      '@context': 'https://schema.org',
+      '@type': 'FAQPage',
+      mainEntity: rows.slice(0, 12).map(r => ({
+        '@type': 'Question',
+        name: `${r.paid.name} 在 Mac 上有哪些免费或开源平替？`,
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text: `${r.paid.name}（${r.paid.pricing}）最受 Mac 社区推荐的免费 / 开源替代方案包括：${r.alts.map(a => `${a.name}（${a.pricing}${a.cask ? `，brew install --cask ${a.cask}` : ''}）`).join('、')}。`,
+        },
+      })),
+    },
+  ];
+  return frame({
+    title: 'Mac & AI 付费软件开源平替大全',
+    description: `精选 ${rows.length} 组热门付费 Mac 软件与 AI 工具的 0 元开源免费替代方案，含真实投票、一键 Homebrew 安装与并排对比。`,
+    origin, umamiId, path: '/alternatives', current: 'apps', jsonLd: altJsonLd, main: `
+<section class="shell page-head">
+  <div>
+    <h1>Mac &amp; AI 付费软件开源平替大全</h1>
+    <p class="lede">不想被十几个订阅制 Mac / AI 软件掏空钱包？这里整理了 <strong>${rows.length} 组</strong>经过社区实测的高口碑开源免费替代方案，支持一键对比与 Homebrew 批量安装。</p>
+    ${statLine(stats)}
+  </div>
+</section>
+<section class="shell alt-hub" data-alt-hub>
+  ${brewAll ? `<div class="alt-brew-banner">
+    <div class="command-terminal">
+      <div class="command-terminal-bar">
+        <span>${glyph('terminal')} 热门免费 / 开源平替一键安装命令（${Math.min(18, freeCasks.length)} 款精选 Cask）</span>
+        <button type="button" class="button primary small" data-copy="alt-brew-all">${glyph('copy')}复制一键命令</button>
+      </div>
+      <pre><code id="alt-brew-all">${esc(brewAll)}</code></pre>
+    </div>
+  </div>` : ''}
+  <div class="alt-controls">
+    <div class="studio-theme-bar" role="group" aria-label="按场景筛选平替">
+      ${groups.map(([id, label], idx) => `<button type="button" class="filter-pill${idx === 0 ? ' is-on' : ''}" data-alt-group="${esc(id)}">${esc(label)}${id === '' ? ` (${rows.length})` : ''}</button>`).join('')}
+    </div>
+    <input type="search" id="alt-search" maxlength="50" placeholder="搜想替代的付费软件，如 CleanShot / Cursor / Conductor / 1Password…" autocomplete="off">
+  </div>
+  <ul class="alt-matrix" id="alt-matrix">
+    ${rows.map(r => `<li class="alt-pair-card" data-alt-item data-group="${esc(r.group)}" data-search="${esc((r.paid.name + ' ' + r.paid.summary + ' ' + r.alts.map(a => a.name + ' ' + a.summary).join(' ')).toLowerCase())}">
+      <div class="alt-paid-col">
+        <span class="alt-col-label">热门付费 / 订阅</span>
+        <a class="alt-app-link" href="${appHref(r.paid.key)}">
+          ${appIcon(r.paid, 'md')}
+          <div>
+            <strong>${esc(r.paid.name)} ${pricingTag(r.paid.pricing)}</strong>
+            ${r.paid.summary ? `<p>${esc(r.paid.summary)}</p>` : ''}
+          </div>
+        </a>
+      </div>
+      <div class="alt-arrow-col" aria-hidden="true">${glyph('arrow')}<span>开源平替</span></div>
+      <div class="alt-free-col">
+        <span class="alt-col-label">推荐免费 / 开源替代</span>
+        <ul class="alt-free-list">${r.alts.map(a => `<li>
+          <a class="alt-free-main" href="${appHref(a.key)}">
+            ${appIcon(a, 'sm')}
+            <span class="alt-free-info">
+              <strong>${esc(a.name)} ${pricingTag(a.pricing)}${a.cask ? ' <span class="mini-tag is-brew">brew</span>' : ''}</strong>
+              ${a.summary ? `<span>${esc(a.summary)}</span>` : ''}
+            </span>
+          </a>
+          <div class="alt-free-acts">
+            <a class="compare-mini" href="${href('/compare', { a: r.paid.key, b: a.key })}" title="并排对比 ${esc(r.paid.name)} 与 ${esc(a.name)}">对比</a>
+            ${kitButton(a)}
+          </div>
+        </li>`).join('')}</ul>
+      </div>
+    </li>`).join('')}
+  </ul>
+</section>`,
+  });
+}
+
+export function insightsPage({ origin, umamiId, report }) {
+  const { stats, avgApps, fossCount, fossPct, freePct, brewCount, brewPct, topPenetration = [], pairs = [], themeBreakdown = [], roleBreakdowns = [] } = report;
+  const citeLines = [
+    `【Mac 真实软件生态数据摘要】来源：乔木软件推荐 (${origin}/insights)`,
+    `- 样本规模：${stats.posters} 张真实 Mac 用户公开海报 · ${stats.apps} 款实测软件 · 人均推荐 ${avgApps} 款`,
+    `- 开源与装机：${fossPct}% 为纯开源免费软件，${freePct}% 可免费使用，${brewPct}% 支持 Homebrew Cask 一键安装`,
+    `- 真实桌面装机率 Top 5：${topPenetration.slice(0, 5).map(a => `${a.name} (${a.pct}%)`).join('、')}`,
+    ...(pairs.length ? [`- 最常见黄金搭档：${pairs.slice(0, 3).map(p => `${p.nameA} + ${p.nameB} (${p.pct}%)`).join('、')}`] : []),
+  ];
+  const insightsJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'Dataset',
+    name: '乔木软件推荐 · 真实 Mac 软件装机率与生态数据报告',
+    url: origin + '/insights',
+    inLanguage: 'zh-CN',
+    description: `基于 ${stats.posters} 张真实 Mac 用户公开桌面海报实时统计的软件装机穿透率、黄金搭档组合、开源免费占比与 Homebrew Cask 覆盖率数据。`,
+    creator: { '@type': 'Organization', name: '乔木软件推荐', url: origin + '/' },
+    distribution: [{ '@type': 'DataDownload', encodingFormat: 'application/json', contentUrl: origin + '/api/v1/insights' }],
+  };
+  return frame({
+    title: '真实 Mac 软件生态数据洞察',
+    description: `基于 ${stats.posters} 张真实 Mac 桌面海报实时统计：装机率 Top 榜、最常见黄金搭档组合、开源免费与 Homebrew 覆盖率报告。`,
+    origin, umamiId, path: '/insights', current: 'apps', jsonLd: insightsJsonLd, main: `
+<section class="shell page-head">
+  <div>
+    <h1>真实 Mac 软件生态数据洞察</h1>
+    <p class="lede">每张公开海报都来自一台真实在用的 Mac。以下所有穿透率、黄金搭档与结构分布均由全站真实数据实时计算，零广告干预。</p>
+  </div>
+  <div class="actions">
+    <a class="button primary" href="/studio">${glyph('plus')}贡献我的桌面数据</a>
+    <a class="button secondary" href="/api/v1/insights">${glyph('code')}开放 JSON 数据</a>
+  </div>
+</section>
+<section class="shell insights-shell">
+  <div class="insights-kpis">
+    <div class="kpi-card"><span class="kpi-label">公开真实桌面</span><strong class="kpi-val num">${esc(stats.posters)}</strong><span class="kpi-sub">张署名的 Mac 软件海报</span></div>
+    <div class="kpi-card"><span class="kpi-label">人均推荐软件</span><strong class="kpi-val num">${esc(avgApps)}</strong><span class="kpi-sub">款日常主力应用 / 台</span></div>
+    <div class="kpi-card"><span class="kpi-label">开源免费占比</span><strong class="kpi-val num is-mint">${esc(fossPct)}%</strong><span class="kpi-sub">${esc(fossCount)} 款开源 · ${esc(freePct)}% 免费可用</span></div>
+    <div class="kpi-card"><span class="kpi-label">Homebrew 覆盖</span><strong class="kpi-val num is-amber">${esc(brewPct)}%</strong><span class="kpi-sub">${esc(brewCount)} 款支持 brew 一键安装</span></div>
+  </div>
+
+  <div class="insights-grid">
+    <section class="studio-card" aria-labelledby="pen-title">
+      <div class="section-head"><div><h2 id="pen-title">真实桌面装机率 Top 14</h2><p>按出现在公开海报中的比例排序（已排除系统自带）</p></div><a class="text-link" href="/apps">完整软件榜${glyph('arrow')}</a></div>
+      <ol class="pen-list">
+        ${topPenetration.map((a, idx) => `<li class="pen-row">
+          <span class="pen-rank num">${String(idx + 1).padStart(2, '0')}</span>
+          <a class="pen-app" href="${appHref(a.key)}">${appIcon(a, 'sm')}<span>${esc(a.name)}</span></a>
+          <div class="pen-bar-wrap"><div class="pen-bar-track"><div class="pen-bar-fill" data-width="${a.pct}%"></div></div></div>
+          <span class="pen-stat num"><strong>${a.pct}%</strong><span>${a.count} 票</span></span>
+        </li>`).join('')}
+      </ol>
+    </section>
+
+    <div class="insights-side">
+      ${pairs.length ? `<section class="studio-card" aria-labelledby="pairs-title">
+        <div class="section-head"><div><h2 id="pairs-title">高频黄金搭档组合</h2><p>最常同时出现在同一台 Mac 桌面上的软件对</p></div></div>
+        <ul class="pair-list">
+          ${pairs.slice(0, 10).map(p => `<li class="pair-row">
+            <div class="pair-apps">
+              <a href="${appHref(p.keyA)}">${appIcon({ name: p.nameA, icon: p.iconA }, 'sm')}<span>${esc(p.nameA)}</span></a>
+              <span class="pair-plus" aria-hidden="true">+</span>
+              <a href="${appHref(p.keyB)}">${appIcon({ name: p.nameB, icon: p.iconB }, 'sm')}<span>${esc(p.nameB)}</span></a>
+            </div>
+            <div class="pair-end">
+              <span class="pair-stat num">${p.count} 台 · ${p.pct}%</span>
+              <a class="compare-mini" href="${href('/compare', { a: p.keyA, b: p.keyB })}">对比</a>
+            </div>
+          </li>`).join('')}
+        </ul>
+      </section>` : ''}
+
+      <section class="studio-card" aria-labelledby="theme-dist-title">
+        <h2 id="theme-dist-title">站内软件场景分布</h2>
+        <div class="taste-bars">
+          ${themeBreakdown.map(t => `<a class="taste-bar-row theme-dist-row" href="${href('/apps', { theme: t.id })}">
+            <div class="taste-bar-head"><span>${esc(t.name)}</span><span class="num">${t.count} 款 · ${t.pct}%</span></div>
+            <div class="taste-bar-track"><div class="taste-bar-fill" data-width="${Math.max(6, t.pct)}%"></div></div>
+          </a>`).join('')}
+        </div>
+      </section>
+    </div>
+  </div>
+
+  ${roleBreakdowns.length ? `<section class="studio-card" aria-labelledby="role-dist-title">
+    <h2 id="role-dist-title">不同身份 Mac 用户的 Top 5 主力软件</h2>
+    <div class="role-insights-grid">
+      ${roleBreakdowns.map(rb => `<div class="role-insight-box">
+        <h3><a href="${href('/posters', { role: rb.role })}">${esc(rb.role)}</a></h3>
+        <ul>${rb.items.map(it => `<li><a href="${appHref(it.key)}">${appIcon(it, 'sm')}<span>${esc(it.name)}</span><span class="num">${it.count}</span></a></li>`).join('')}</ul>
+      </div>`).join('')}
+    </div>
+  </section>` : ''}
+
+  <section class="studio-card" aria-labelledby="cite-title">
+    <h2 id="cite-title">一键引用实时数据摘要（适合文章 / 播客 / 视频引用）</h2>
+    <div class="command-terminal">
+      <div class="command-terminal-bar">
+        <span>实时统计摘要 · 欢迎署名引用</span>
+        <button type="button" class="button primary small" data-copy="insights-cite-text">${glyph('copy')}复制摘要</button>
+      </div>
+      <pre><code id="insights-cite-text">${esc(citeLines.join('\n'))}</code></pre>
+    </div>
+  </section>
+</section>`,
   });
 }
 
