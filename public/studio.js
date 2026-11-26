@@ -55,33 +55,39 @@
     ['#8f8f9c', '#55555f'],
   ];
 
-  // 4 Poster Font Presets (classic STSongti/Noto Serif + SmileySans + LXGW WenKai + Modern Sans)
+  // 4 Open-Source Poster Fonts (Default: LXGW WenKai + Noto Serif SC + Noto Sans SC + SmileySans)
   const FONT_PRESETS = {
-    songti: {
-      heading: (sz) => `700 ${sz}px "STSongti-SC-Bold", "Songti SC", "Noto Serif SC", Georgia, serif`,
-      label: (sz) => `700 ${sz}px "STSongti-SC-Bold", "Songti SC", "Noto Serif SC", Georgia, serif`,
+    wenkai: {
+      heading: (sz) => `400 ${sz}px "LXGW WenKai", "Kaiti SC", serif`,
+      label: (sz) => `400 ${sz}px "LXGW WenKai", "Kaiti SC", serif`,
+      cssUrl: 'https://fontsapi.zeoseven.com/292/main/result.css',
+      familyName: 'LXGW WenKai',
+      weight: 400,
+    },
+    'noto-serif': {
+      heading: (sz) => `700 ${sz}px "Noto Serif SC", Georgia, serif`,
+      label: (sz) => `700 ${sz}px "Noto Serif SC", Georgia, serif`,
       cssUrl: 'https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@700&display=swap',
       familyName: 'Noto Serif SC',
+      weight: 700,
+    },
+    'noto-sans': {
+      heading: (sz) => `700 ${sz}px "Noto Sans SC", "PingFang SC", sans-serif`,
+      label: (sz) => `700 ${sz}px "Noto Sans SC", "PingFang SC", sans-serif`,
+      cssUrl: 'https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@700&display=swap',
+      familyName: 'Noto Sans SC',
+      weight: 700,
     },
     smiley: {
       heading: (sz) => `400 ${sz}px "SmileySans", "PingFang SC", sans-serif`,
       label: (sz) => `400 ${sz}px "SmileySans", "PingFang SC", sans-serif`,
       localUrl: '/fonts/SmileySans-Oblique.otf',
       familyName: 'SmileySans',
-    },
-    wenkai: {
-      heading: (sz) => `700 ${sz}px "LXGW WenKai", "LXGW WenKai TC", "Kaiti SC", serif`,
-      label: (sz) => `700 ${sz}px "LXGW WenKai", "LXGW WenKai TC", "Kaiti SC", serif`,
-      cssUrl: 'https://fontsapi.zeoseven.com/292/main/result.css',
-      familyName: 'LXGW WenKai',
-    },
-    sans: {
-      heading: (sz) => `700 ${sz}px -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Noto Sans SC", sans-serif`,
-      label: (sz) => `600 ${sz}px -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Noto Sans SC", sans-serif`,
+      weight: 400,
     },
   };
 
-  let activeFont = 'songti';
+  let activeFont = 'wenkai';
   let activeScrim = 'desktop';
   let bgImage = null;
   let activeWallpaperUrl = wallpapers[0]?.url || '';
@@ -90,25 +96,43 @@
   const selectedApps = [];
   const iconImages = new Map();
   const wallpaperCache = new Map();
-  const loadedFonts = new Set();
+  const loadedStylesheets = new Set();
 
-  async function ensureFontLoaded(fontId) {
+  function defaultTitleFor(author) {
+    const year = new Date().getFullYear();
+    const clean = (author || '').trim();
+    return clean ? `${year} ${clean} 推荐的 Mac 软件` : `${year} 我推荐的 Mac 软件`;
+  }
+
+  function resolveTitle() {
+    const custom = titleInput?.value.trim();
+    return custom || defaultTitleFor(nameInput?.value);
+  }
+
+  async function ensureFontLoaded(fontId, sampleText = '') {
     const preset = FONT_PRESETS[fontId];
-    if (!preset || loadedFonts.has(fontId)) return;
-    loadedFonts.add(fontId);
+    if (!preset) return;
     try {
-      if (preset.localUrl && 'FontFace' in window) {
+      if (preset.localUrl && !loadedStylesheets.has(fontId) && 'FontFace' in window) {
+        loadedStylesheets.add(fontId);
         const face = new FontFace(preset.familyName, `url(${preset.localUrl})`);
         await face.load();
         document.fonts.add(face);
       } else if (preset.cssUrl) {
-        const link = document.createElement('link');
-        link.rel = 'stylesheet';
-        link.href = preset.cssUrl;
-        document.head.append(link);
-        await new Promise(resolve => { link.onload = resolve; link.onerror = resolve; setTimeout(resolve, 2500); });
+        if (!loadedStylesheets.has(fontId)) {
+          loadedStylesheets.add(fontId);
+          const link = document.createElement('link');
+          link.rel = 'stylesheet';
+          link.href = preset.cssUrl;
+          document.head.append(link);
+          await new Promise(resolve => { link.onload = resolve; link.onerror = resolve; setTimeout(resolve, 3500); });
+        }
         if (document.fonts?.load) {
-          await document.fonts.load(`700 48px "${preset.familyName}"`).catch(() => {});
+          const text = sampleText || defaultTitleFor(nameInput?.value);
+          await Promise.race([
+            document.fonts.load(`${preset.weight} 48px "${preset.familyName}"`, text),
+            new Promise(resolve => setTimeout(resolve, 3000)),
+          ]).catch(() => {});
         }
       }
     } catch {}
@@ -210,15 +234,23 @@
     return rows;
   }
 
+  let renderSeq = 0;
+
   async function renderPoster() {
-    await ensureFontLoaded(activeFont);
-    if (!bgImage && activeWallpaperUrl) {
-      bgImage = await loadImage(activeWallpaperUrl, wallpaperCache);
-    }
-    await Promise.all(selectedApps.map(a => loadIconImage(a.icon)));
+    const seq = ++renderSeq;
+    const rows = groupIntoRows(selectedApps);
+    const rawTitle = resolveTitle();
+    if (titleInput) titleInput.placeholder = defaultTitleFor(nameInput?.value);
+    const sampleText = rawTitle + rows.map(r => r.label).join('');
+
+    await Promise.all([
+      ensureFontLoaded(activeFont, sampleText),
+      (!bgImage && activeWallpaperUrl) ? loadImage(activeWallpaperUrl, wallpaperCache).then(img => { bgImage = img; }) : Promise.resolve(),
+      ...selectedApps.map(a => loadIconImage(a.icon)),
+    ]);
+    if (seq !== renderSeq) return;
 
     const W = 1600;
-    const rows = groupIntoRows(selectedApps);
     const rowHeight = rows.length <= 5 ? Math.min(146, Math.floor(650 / Math.max(1, rows.length))) : 118;
     const footerH = 46;
     const H = Math.max(900, 214 + footerH + rows.length * rowHeight);
@@ -252,7 +284,7 @@
 
     const white = '#fffbf4';
     const quiet = 'rgba(255, 251, 244, 0.78)';
-    const fp = FONT_PRESETS[activeFont] || FONT_PRESETS.songti;
+    const fp = FONT_PRESETS[activeFont] || FONT_PRESETS.wenkai;
     const uiFont = (sz, weight = 600) => `${weight} ${sz}px "Avenir Next", -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Noto Sans SC", sans-serif`;
 
     const drawShadowText = (text, x, y, align = 'left', color = white) => {
@@ -268,7 +300,6 @@
       ctx.restore();
     };
 
-    const rawTitle = titleInput.value.trim() || `${new Date().getFullYear()} 我推荐的 Mac 软件`;
     const headingBase = activeFont === 'smiley' ? 76 : 68;
     const fittedHeading = fitText(rawTitle, fp.heading, headingBase, 40, W - 128);
     ctx.font = fp.heading(fittedHeading.size);
@@ -652,15 +683,14 @@
     const url = canvas.toDataURL('image/png');
     const a = document.createElement('a');
     a.href = url;
-    const prefix = nameInput.value.trim() ? nameInput.value.trim() + '-' : '';
-    a.download = prefix + (titleInput.value.trim() || 'mac-software') + '.png';
+    a.download = resolveTitle().replace(/\s+/g, '-') + '.png';
     a.click();
     window.qiaomuToast?.('已下载高清海报 PNG');
   });
 
   publishBtn?.addEventListener('click', async () => {
     const name = nameInput.value.trim();
-    const title = titleInput.value.trim() || `${new Date().getFullYear()} 我推荐的 Mac 软件`;
+    const title = resolveTitle();
     const role = roleInput?.value.trim() || '';
     if (!selectedApps.length) { appsModal?.showModal(); return; }
     if (!name) { statusEl.textContent = '请先输入你的名字（署名）。'; nameInput.focus(); return; }

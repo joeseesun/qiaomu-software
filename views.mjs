@@ -857,7 +857,7 @@ export function studioPage({ origin, umamiId, catalogApps = [], wallpapers = [],
     origin, umamiId, path: '/studio', current: 'studio', extraScript: studioAsset, main: `
 <section class="shell studio-v3" id="studio-root">
   <header class="studio-top">
-    <div>
+    <div class="studio-top-left">
       <h1>制作你的软件海报</h1>
       <p class="studio-sub">点选软件 · 挑张壁纸 · 填名字出图</p>
     </div>
@@ -971,16 +971,16 @@ export function studioPage({ origin, umamiId, catalogApps = [], wallpapers = [],
     </div>
     <div class="style-modal-body">
       <div class="style-group">
-        <p class="style-label">海报字体</p>
+        <p class="style-label">海报开源字体</p>
         <div class="font-grid" role="group" aria-label="选择海报字体">
-          <button type="button" class="font-card is-active" data-font="songti" aria-pressed="true"><strong>经典宋体</strong><span>原版同款 · 思源宋体</span></button>
-          <button type="button" class="font-card" data-font="smiley" aria-pressed="false"><strong>得意黑</strong><span>开源海报体 · 现代斜体</span></button>
-          <button type="button" class="font-card" data-font="wenkai" aria-pressed="false"><strong>霞鹜文楷</strong><span>开源手写体 · 温润雅致</span></button>
-          <button type="button" class="font-card" data-font="sans" aria-pressed="false"><strong>现代黑体</strong><span>苹方 / 思源黑 · 干净利落</span></button>
+          <button type="button" class="font-card is-active" data-font="wenkai" aria-pressed="true"><strong>霞鹜文楷</strong><span>默认开源字体 · 温润雅致</span></button>
+          <button type="button" class="font-card" data-font="noto-serif" aria-pressed="false"><strong>思源宋体</strong><span>开源衬线体 · 出版质感</span></button>
+          <button type="button" class="font-card" data-font="noto-sans" aria-pressed="false"><strong>思源黑体</strong><span>开源无衬线 · 干净现代</span></button>
+          <button type="button" class="font-card" data-font="smiley" aria-pressed="false"><strong>得意黑</strong><span>开源海报体 · 利落斜体</span></button>
         </div>
       </div>
       <div class="studio-fields">
-        <label><span>海报标题</span><input type="text" id="studio-title" maxlength="34" value="${currentYear} 我推荐的 Mac 软件"></label>
+        <label><span>海报标题（留空将自动随署名生成）</span><input type="text" id="studio-title" maxlength="34" value="" placeholder="${currentYear} 我推荐的 Mac 软件"></label>
         <label><span>身份标签（可选）</span>
           <input type="text" id="studio-role" maxlength="16" list="studio-role-list" placeholder="如：独立开发者、设计师">
           <datalist id="studio-role-list">${roles.map(r => `<option value="${esc(r)}">`).join('')}</datalist>
