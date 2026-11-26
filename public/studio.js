@@ -454,6 +454,39 @@
     });
   }
 
+  // Batch paste import from `ls /Applications`
+  const pasteInput = document.getElementById('studio-paste-input');
+  const pasteBtn = document.getElementById('studio-paste-btn');
+  pasteBtn?.addEventListener('click', async () => {
+    const rawText = pasteInput?.value?.trim();
+    if (!rawText) { pasteInput?.focus(); return; }
+    pasteBtn.disabled = true;
+    statusEl.textContent = '正在匹配站内图标并分类…';
+    try {
+      const res = await fetch('/api/v1/parse-apps', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ rawText }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '解析失败');
+      let added = 0;
+      for (const item of data.items) {
+        if (item.isSystem) continue;
+        if (selectedApps.length >= 24 && added >= 24) break;
+        const before = selectedApps.length;
+        addApp({ name: item.name, key: item.key, group: item.group, icon: item.icon });
+        if (selectedApps.length > before) added++;
+      }
+      pasteInput.value = '';
+      statusEl.textContent = added ? `已自动导入 ${added} 款软件并匹配共识图标！可继续调整分类或补写推荐理由。` : '没有新增软件（可能已在清单中或均为系统自带应用）。';
+    } catch (err) {
+      statusEl.textContent = err.message || '解析失败。';
+    } finally {
+      pasteBtn.disabled = false;
+    }
+  });
+
   // Search suggest inside studio
   let suggestTimer = null;
   appSearch?.addEventListener('input', () => {

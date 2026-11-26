@@ -239,3 +239,85 @@ test('dynamic OG PNG, developer SVG badge, taste test, RSS feed and public JSON 
   assert.match(homeHtml, /大家写的走心理由/);
   assert.match(homeHtml, /每天用百次的启动器/);
 });
+
+test('need search, decision filters, free alternatives, community reviews, setup wizard, compare and Mac audit', async t => {
+  const { share, post, page, html } = await start(t);
+
+  await share('开发效率桌', [
+    { name: 'Raycast', group: '效率' },
+    { name: 'CleanShot X', group: '效率' },
+    { name: 'Shottr', group: '效率' },
+    { name: 'MonitorControl', group: '系统' },
+    { name: 'OrbStack', group: '开发' },
+    { name: '备忘录', group: '写作' },
+  ], { name: 'DevA', role: '独立开发者' });
+
+  await share('极客二号桌', [
+    { name: 'Raycast', group: '效率' },
+    { name: 'Alfred', group: '效率' },
+    { name: 'OrbStack', group: '开发' },
+    { name: 'Ghostty', group: '开发' },
+  ], { name: 'DevB', role: '全栈开发' });
+
+  // Pain-point Chinese keyword search in /apps and /api/v1/suggest
+  const displaySuggest = await (await page('/api/v1/suggest?q=' + encodeURIComponent('外接显示器'))).json();
+  assert.equal(displaySuggest.apps[0]?.key, 'monitorcontrol');
+  assert.match(await html('/apps?q=' + encodeURIComponent('截图')), /CleanShot X/);
+
+  // Decision filters: foss, brew, hide_system, theme
+  const fossApps = await (await page('/api/v1/apps?pricing=foss')).json();
+  assert.ok(fossApps.items.some(a => a.key === 'monitorcontrol'));
+  assert.ok(!fossApps.items.some(a => a.key === 'cleanshot x'));
+
+  const noSys = await (await page('/api/v1/apps?hide_system=1')).json();
+  assert.ok(!noSys.items.some(a => a.key === '备忘录'));
+
+  const devTheme = await (await page('/api/v1/apps?theme=dev')).json();
+  assert.ok(devTheme.items.some(a => a.key === 'orbstack'));
+
+  // Paid app shows free/open-source alternatives + compare links
+  const csHtml = await html('/apps/' + encodeURIComponent('cleanshot x'));
+  assert.match(csHtml, /免费 \/ 开源平替/);
+  assert.match(csHtml, /Shottr/);
+  assert.match(csHtml, /\/compare\?a=cleanshot%20x&amp;b=shottr/);
+
+  // Community quick review does NOT inflate poster count, supports voting & 24h IP dedupe
+  const revRes = await post({ author: '老用户', kind: 'tip', note: '配合 Option+Space 呼出剪贴板非常顺手' }, '/api/v1/apps/raycast/reviews');
+  assert.equal(revRes.status, 201);
+  const rev = await revRes.json();
+  assert.equal(rev.kind, 'tip');
+  const dupRev = await post({ author: '老用户', kind: 'tip', note: '同一天再发一条试试' }, '/api/v1/apps/raycast/reviews');
+  assert.equal(dupRev.status, 429);
+
+  const voteRev = await post({ reviewId: rev.id }, '/api/v1/reviews/vote');
+  assert.deepEqual(await voteRev.json(), { voted: true, votes: 1 });
+  const rayHtml = await html('/apps/raycast');
+  assert.match(rayHtml, /配合 Option\+Space 呼出剪贴板非常顺手/);
+  assert.match(rayHtml, /被 <span class="num">2<\/span> 张公开海报推荐/, 'review does not alter poster vote count');
+
+  // /taste with pasted ls /Applications output -> collaborative missingRecommended + 7-pillar gapAudit
+  const auditRes = await post({ rawText: 'Raycast.app\nSafari.app\nUtilities\n' }, '/api/v1/taste');
+  assert.equal(auditRes.status, 200);
+  const audit = await auditRes.json();
+  assert.ok(audit.missingRecommended.some(m => m.key === 'orbstack'), 'peer collaborative diff recommends OrbStack');
+  assert.equal(audit.gapAudit.length, 7);
+  assert.equal(audit.gapAudit.find(s => s.id === 'launcher').covered, true);
+  assert.equal(audit.gapAudit.find(s => s.id === 'screenshot').covered, false);
+
+  // /api/v1/parse-apps for studio 10s batch import
+  const parsed = await (await post({ rawText: '/Applications/Raycast.app\n/Applications/Safari.app\nOrbStack.app' }, '/api/v1/parse-apps')).json();
+  assert.ok(parsed.items.some(i => i.key === 'raycast' && !i.isSystem));
+  assert.ok(parsed.items.some(i => i.key === 'safari' && i.isSystem));
+
+  // /setup page renders packs & scripts
+  const setupHtml = await html('/setup');
+  assert.match(setupHtml, /新 Mac 5 分钟装机包/);
+  assert.match(setupHtml, /新 Mac 必装基础包/);
+  assert.match(setupHtml, /0 元纯开源免费全家桶/);
+
+  // /compare page renders side-by-side + overlap bar
+  const cmpHtml = await html('/compare?a=raycast&b=alfred');
+  assert.match(cmpHtml, /Raycast vs Alfred/);
+  assert.match(cmpHtml, /只装 Raycast · 1/);
+  assert.match(cmpHtml, /两款都装 · 1/);
+});

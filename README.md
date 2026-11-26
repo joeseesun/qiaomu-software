@@ -4,10 +4,12 @@
 
 - [首页](https://software.qiaomu.ai/)：最新海报、最近大家在推荐的软件、走心推荐理由精选、按分类/身份找。
 - [海报](https://software.qiaomu.ai/posters)：按软件名、标题、身份标签或作者查找，可按软件、分类、身份与作者筛选。
-- [软件榜](https://software.qiaomu.ai/apps)：总榜、最近升温（近 30 天）、新上榜、小众宝藏四种排序，支持随机逛逛与一键加入本地装机清单。
-- [测品味](https://software.qiaomu.ai/taste)：勾选常用软件，测算撞款率、小众独特度，并匹配全站口味最像的真实桌面海报。
-- [网页制作](https://software.qiaomu.ai/studio)：无需安装工具，在浏览器里选壁纸并复用全站共识图标 30 秒合成海报，支持原地更新与撤回。
-- 软件页 `/apps/:名称`：推荐海报数、官网/App Store/Homebrew Cask 一键安装、大家的推荐理由（支持「写得好」投票）、常一起被推荐、同分类其他选择、动态 OG 分享图（`/og/apps/:名称.png`）与开发者可嵌入 SVG 徽章（`/badges/apps/:名称.svg`）。
+- [软件榜](https://software.qiaomu.ai/apps)：总榜、最近升温（近 30 天）、新上榜、小众宝藏四种排序，支持痛点关键词搜索、标准场景大类、开源免费/Brew/隐藏系统自带筛选与一键加入本地装机清单。
+- [新机装机包](https://software.qiaomu.ai/setup)：按场景选套餐，一键生成自动安装 Homebrew 与批量 Cask 的终端脚本、可下载 `setup-mac.sh` 或 `Brewfile`。
+- [软件体检](https://software.qiaomu.ai/taste)：支持粘贴 `ls /Applications` 1 秒导入本机软件，输出同频高手差集推荐、7 项核心效率短板体检、撞款率及最像的真实桌面海报。
+- [软件对比](https://software.qiaomu.ai/compare)：并排对比任意两款 Mac 软件的票数、定价、Brew 命令、用户评价与真实桌面同时安装比例。
+- [网页制作](https://software.qiaomu.ai/studio)：无需安装工具，支持粘贴应用列表 10 秒批量导入并复用全站共识图标合成海报，支持原地更新与撤回。
+- 软件页 `/apps/:名称`：推荐海报数、官网/App Store/Homebrew Cask 一键安装、大家的推荐理由与匿名补充使用技巧/避坑提醒（支持点赞，不影响海报榜计票）、免费/开源平替、常一起被推荐、同分类其他选择、动态 OG 分享图与开发者可嵌入 SVG 徽章。
 - 海报页 `/s/:id`：点击大图灯箱预览、带标题下载海报、一键复制文字清单、整张加入本地装机清单（导出 `brew install --cask` / `Brewfile` / Markdown）、口味相近的海报。
 - 订阅与开放接口：`/feed.xml`（RSS 2.0）与公开只读 JSON API（`/api/v1/apps`、`/api/v1/apps/:名称`、`/api/v1/posters`、`/api/v1/suggest`）。
 

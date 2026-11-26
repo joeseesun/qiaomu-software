@@ -6,9 +6,17 @@ import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 import {
+  AUDIT_SLOTS,
   BUILTIN_BUNDLE_TO_CANONICAL,
+  BUILTIN_BY_KEY,
+  FREE_ALTERNATIVES,
   ROLES,
+  SETUP_PACKS,
+  STANDARD_THEMES,
+  THEME_BY_ID,
+  inferThemesFromText,
   normalizeAppKey,
+  parseApplicationsPaste,
   seedMetadataAndAliases,
   startMetadataSync,
 } from './metadata.mjs';
@@ -16,10 +24,12 @@ import { createOgCache, renderAppBadge, renderAppOg } from './og.mjs';
 import {
   appPage,
   appsPage,
+  comparePage,
   errorPage,
   galleryPage,
   home,
   makePage,
+  setupPage,
   sharePage,
   studioPage,
   tastePage,
@@ -30,7 +40,6 @@ const directory = fileURLToPath(new URL('./public/', import.meta.url));
 const maxImage = 8 * 1024 * 1024;
 const maxIcon = 64 * 1024;
 const maxIconTotal = 1536 * 1024;
-// Base64 image and icons, plus up to 48 app entries (name, group, note, bundle ID, icon hash) and the icon map keys.
 const maxBody = Math.ceil(maxImage / 3) * 4 + Math.ceil(maxIconTotal / 3) * 4 + 48 * 900 + 24000;
 const idPattern = '[a-f0-9]{24}';
 const hashPattern = /^[a-f0-9]{64}$/;
@@ -188,13 +197,18 @@ const consensusIcon = (key) => `(
   WHERE ci.app_key=${key}
   GROUP BY ci.icon ORDER BY COUNT(DISTINCT ci.share_id) DESC, MAX(cs.created) DESC LIMIT 1
 )`;
-const latestNote = (key) => `(
-  SELECT ln.note FROM app_mentions AS ln
-  JOIN shares AS ls ON ls.id=ln.share_id AND ls.visibility='public'
-  LEFT JOIN (SELECT share_id, app_key, COUNT(*) AS vc FROM reason_votes GROUP BY share_id, app_key) AS lv
-    ON lv.share_id=ln.share_id AND lv.app_key=ln.app_key
-  WHERE ln.app_key=${key} AND ln.note IS NOT NULL
-  ORDER BY COALESCE(lv.vc, 0) DESC, ls.created DESC LIMIT 1
+const latestNote = (key) => `COALESCE(
+  (SELECT ln.note FROM app_mentions AS ln
+   JOIN shares AS ls ON ls.id=ln.share_id AND ls.visibility='public'
+   LEFT JOIN (SELECT share_id, app_key, COUNT(*) AS vc FROM reason_votes GROUP BY share_id, app_key) AS lv
+     ON lv.share_id=ln.share_id AND lv.app_key=ln.app_key
+   WHERE ln.app_key=${key} AND ln.note IS NOT NULL
+   ORDER BY COALESCE(lv.vc, 0) DESC, ls.created DESC LIMIT 1),
+  (SELECT ar.note FROM app_reviews AS ar
+   LEFT JOIN (SELECT review_id, COUNT(*) AS vc FROM app_review_votes GROUP BY review_id) AS rv
+     ON rv.review_id=ar.id
+   WHERE ar.app_key=${key}
+   ORDER BY COALESCE(rv.vc, 0) DESC, ar.created DESC LIMIT 1)
 )`;
 const categoriesOf = (key) => `(
   SELECT json_group_array(category) FROM (
@@ -251,6 +265,9 @@ export function createSoftwareServer({
       mas_url TEXT NOT NULL DEFAULT '',
       pricing TEXT NOT NULL DEFAULT '',
       summary TEXT NOT NULL DEFAULT '',
+      themes TEXT NOT NULL DEFAULT '',
+      keywords TEXT NOT NULL DEFAULT '',
+      is_system INTEGER NOT NULL DEFAULT 0,
       source TEXT NOT NULL DEFAULT 'builtin',
       updated INTEGER NOT NULL DEFAULT 0
     );
@@ -261,16 +278,35 @@ export function createSoftwareServer({
       created INTEGER NOT NULL,
       PRIMARY KEY(share_id, app_key, voter_hash)
     );
+    CREATE TABLE IF NOT EXISTS app_reviews (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      app_key TEXT NOT NULL,
+      author TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'tip',
+      note TEXT NOT NULL,
+      voter_hash TEXT NOT NULL,
+      created INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS app_review_votes (
+      review_id INTEGER NOT NULL REFERENCES app_reviews(id) ON DELETE CASCADE,
+      voter_hash TEXT NOT NULL,
+      created INTEGER NOT NULL,
+      PRIMARY KEY(review_id, voter_hash)
+    );
   `);
 
-  const shareColumns = new Set(db.prepare('PRAGMA table_info(shares)').all().map(column => column.name));
-  if (!shareColumns.has('role')) {
-    db.exec("ALTER TABLE shares ADD COLUMN role TEXT NOT NULL DEFAULT ''");
-  }
-  const mentionCols = new Set(db.prepare('PRAGMA table_info(app_mentions)').all().map(column => column.name));
+  const shareColumns = new Set(db.prepare('PRAGMA table_info(shares)').all().map(c => c.name));
+  if (!shareColumns.has('role')) db.exec("ALTER TABLE shares ADD COLUMN role TEXT NOT NULL DEFAULT ''");
+
+  const mentionCols = new Set(db.prepare('PRAGMA table_info(app_mentions)').all().map(c => c.name));
   for (const column of ['note', 'icon', 'bundle']) {
     if (!mentionCols.has(column)) db.exec(`ALTER TABLE app_mentions ADD COLUMN ${column} TEXT`);
   }
+
+  const metaCols = new Set(db.prepare('PRAGMA table_info(app_metadata)').all().map(c => c.name));
+  if (!metaCols.has('themes')) db.exec("ALTER TABLE app_metadata ADD COLUMN themes TEXT NOT NULL DEFAULT ''");
+  if (!metaCols.has('keywords')) db.exec("ALTER TABLE app_metadata ADD COLUMN keywords TEXT NOT NULL DEFAULT ''");
+  if (!metaCols.has('is_system')) db.exec('ALTER TABLE app_metadata ADD COLUMN is_system INTEGER NOT NULL DEFAULT 0');
 
   db.exec(`
     CREATE INDEX IF NOT EXISTS mentions_by_app ON app_mentions(app_key, category_key, share_id);
@@ -280,6 +316,7 @@ export function createSoftwareServer({
     CREATE INDEX IF NOT EXISTS shares_by_role ON shares(visibility, role, created DESC);
     CREATE INDEX IF NOT EXISTS shares_by_author ON shares(visibility, lower(name), created DESC);
     CREATE INDEX IF NOT EXISTS reason_votes_by_target ON reason_votes(app_key, share_id);
+    CREATE INDEX IF NOT EXISTS reviews_by_app ON app_reviews(app_key, created DESC);
   `);
 
   seedMetadataAndAliases(db, now);
@@ -303,9 +340,7 @@ export function createSoftwareServer({
   function resolveCanonical(name, bundle = null) {
     const rawKey = appKey(name);
     const alias = getAlias.get(rawKey);
-    if (alias) {
-      return { key: alias.canonical_key, name: alias.display_name || name };
-    }
+    if (alias) return { key: alias.canonical_key, name: alias.display_name || name };
     if (bundle && !bundle.startsWith('cli:')) {
       const builtinBundle = BUILTIN_BUNDLE_TO_CANONICAL.get(bundle);
       if (builtinBundle) return { key: builtinBundle.key, name: builtinBundle.name };
@@ -336,7 +371,7 @@ export function createSoftwareServer({
     }
   }
 
-  // Startup backfill and alias reconciliation for public posters
+  // Startup backfill and alias reconciliation
   db.exec('BEGIN IMMEDIATE');
   try {
     db.exec(`
@@ -393,16 +428,17 @@ export function createSoftwareServer({
     SELECT k AS key, ${consensusIcon('keys.k')} AS icon FROM keys
   `);
   const metaByKey = db.prepare(`
-    SELECT app_key AS key, homepage, cask, mas_url, pricing, summary
+    SELECT app_key AS key, homepage, cask, mas_url, pricing, summary, themes, keywords, is_system
     FROM app_metadata WHERE app_key IN (SELECT value FROM json_each(?))
   `);
-  const getMeta = db.prepare('SELECT homepage, cask, mas_url, pricing, summary FROM app_metadata WHERE app_key=?');
+  const getMeta = db.prepare('SELECT homepage, cask, mas_url, pricing, summary, themes, keywords, is_system FROM app_metadata WHERE app_key=?');
 
   const getStats = db.prepare(`
     SELECT (SELECT COUNT(*) FROM shares WHERE visibility='public') AS posters,
       (SELECT COUNT(DISTINCT m.app_key) FROM app_mentions AS m ${publicJoin}) AS apps,
       (SELECT COUNT(DISTINCT m.category_key) FROM app_mentions AS m ${publicJoin}) AS categories,
-      (SELECT COUNT(*) FROM (SELECT DISTINCT m.share_id, m.app_key FROM app_mentions AS m ${publicJoin} WHERE m.note IS NOT NULL)) AS notes
+      ((SELECT COUNT(*) FROM (SELECT DISTINCT m.share_id, m.app_key FROM app_mentions AS m ${publicJoin} WHERE m.note IS NOT NULL))
+       + (SELECT COUNT(*) FROM app_reviews)) AS notes
   `);
   const getCategories = db.prepare(`
     SELECT MIN(m.category) AS name, COUNT(DISTINCT m.app_key) AS count, COUNT(DISTINCT m.share_id) AS posters
@@ -417,43 +453,109 @@ export function createSoftwareServer({
     GROUP BY role ORDER BY count DESC, role LIMIT 20
   `);
 
-  const getApps = db.prepare(`
-    WITH matches AS (
-      SELECT m.app_key, MIN(m.name) AS name, COUNT(DISTINCT m.share_id) AS count,
-        COUNT(DISTINCT CASE WHEN s.created >= ? THEN m.share_id END) AS recent,
-        COUNT(DISTINCT CASE WHEN m.note IS NOT NULL THEN m.share_id END) AS note_count,
-        COALESCE((SELECT COUNT(*) FROM reason_votes AS rv WHERE rv.app_key=m.app_key), 0) AS votes,
-        MIN(s.created) AS first, MAX(s.created) AS last
-      FROM app_mentions AS m ${publicJoin}
-      WHERE (?='' OR instr(m.app_key, lower(?))>0 OR instr(lower(m.name), lower(?))>0) AND (?='' OR m.category_key=lower(?))
-      GROUP BY m.app_key
-    ), ranked AS (
-      SELECT *,
-        CASE ?
-          WHEN 'rising' THEN recent
-          WHEN 'new' THEN first
-          WHEN 'gems' THEN
-            (CASE WHEN note_count > 0 THEN 1000000 ELSE 0 END)
-            + (CASE WHEN count BETWEEN 2 AND 8 THEN 200000 WHEN count = 1 THEN 100000 ELSE 0 END)
-            + (votes * 5000) + (note_count * 2000) - (count * 50)
-          ELSE count
-        END AS score
-      FROM matches ORDER BY score DESC, count DESC, last DESC, app_key LIMIT ? OFFSET ?
-    )
-    SELECT ranked.app_key AS key, ranked.name, ranked.count, ranked.recent, ranked.note_count, ranked.votes, ranked.first, ranked.last,
-      ${categoriesOf('ranked.app_key')} AS categories,
-      ${consensusIcon('ranked.app_key')} AS icon,
-      ${latestNote('ranked.app_key')} AS note,
+  const getAllActiveApps = db.prepare(`
+    SELECT m.app_key AS key, MIN(m.name) AS name, COUNT(DISTINCT m.share_id) AS count,
+      COUNT(DISTINCT CASE WHEN s.created >= ? THEN m.share_id END) AS recent,
+      COUNT(DISTINCT CASE WHEN m.note IS NOT NULL THEN m.share_id END) AS note_count,
+      COALESCE((SELECT COUNT(*) FROM app_reviews AS ar WHERE ar.app_key=m.app_key), 0) AS review_count,
+      COALESCE((SELECT COUNT(*) FROM reason_votes AS rv WHERE rv.app_key=m.app_key), 0) AS votes,
+      MIN(s.created) AS first, MAX(s.created) AS last,
+      ${categoriesOf('m.app_key')} AS categories,
+      ${consensusIcon('m.app_key')} AS icon,
+      ${latestNote('m.app_key')} AS note,
       COALESCE(md.cask, '') AS cask,
       COALESCE(md.homepage, '') AS homepage,
-      COALESCE(md.pricing, '') AS pricing
-    FROM ranked
-    LEFT JOIN app_metadata AS md ON md.app_key=ranked.app_key
-    ORDER BY score DESC, count DESC, last DESC, ranked.app_key
+      COALESCE(md.mas_url, '') AS mas_url,
+      COALESCE(md.pricing, '') AS pricing,
+      COALESCE(md.summary, '') AS summary,
+      COALESCE(md.themes, '') AS themes,
+      COALESCE(md.keywords, '') AS keywords,
+      COALESCE(md.is_system, 0) AS is_system
+    FROM app_mentions AS m ${publicJoin}
+    LEFT JOIN app_metadata AS md ON md.app_key=m.app_key
+    WHERE (?='' OR m.category_key=lower(?))
+    GROUP BY m.app_key
   `);
-  const apps = ({ q = '', category = '', sort = 'top', limit = 24, offset = 0 } = {}) =>
-    getApps.all(now() - 30 * day, q, q, q, category, category, sort, limit, offset)
-      .map(row => ({ ...row, categories: JSON.parse(row.categories) }));
+
+  const allAliasesMap = () => {
+    const map = new Map();
+    for (const row of db.prepare('SELECT alias_key, canonical_key FROM app_aliases').all()) {
+      if (!map.has(row.canonical_key)) map.set(row.canonical_key, []);
+      map.get(row.canonical_key).push(row.alias_key);
+    }
+    return map;
+  };
+
+  function enrichThemes(row) {
+    const set = new Set(String(row.themes ?? '').split(',').filter(Boolean));
+    if (!set.size) {
+      for (const t of inferThemesFromText(`${row.name} ${(row.categories ?? []).join(' ')} ${row.summary ?? ''}`)) set.add(t);
+    }
+    return [...set];
+  }
+
+  function matchesPricingFilter(row, pricing) {
+    const p = row.pricing || '';
+    if (!pricing) return true;
+    if (pricing === 'foss') return p === '开源免费';
+    if (pricing === 'free') return p === '开源免费' || p === '免费' || p === '免费增值';
+    if (pricing === 'paid') return p.includes('付费');
+    return true;
+  }
+
+  function apps({ q = '', category = '', theme = '', pricing = '', brew = false, hideSystem = false, sort = 'top', limit = 24, offset = 0 } = {}) {
+    const rawRows = getAllActiveApps.all(now() - 30 * day, category, category);
+    const qLower = q ? appKey(q) : '';
+    const aliases = qLower ? allAliasesMap() : null;
+
+    const filtered = [];
+    for (const raw of rawRows) {
+      const categories = JSON.parse(raw.categories);
+      const themes = enrichThemes({ ...raw, categories });
+      const row = { ...raw, categories, themes, is_system: Boolean(raw.is_system) };
+
+      if (hideSystem && row.is_system) continue;
+      if (brew && !row.cask) continue;
+      if (!matchesPricingFilter(row, pricing)) continue;
+      if (theme && !themes.includes(theme)) continue;
+      if (qLower) {
+        const hay = `${row.key} ${appKey(row.name)} ${appKey(row.summary)} ${appKey(row.keywords)} ${appKey(categories.join(' '))} ${(aliases.get(row.key) ?? []).join(' ')}`;
+        if (!hay.includes(qLower)) continue;
+      }
+
+      const totalNotes = (row.note_count || 0) + (row.review_count || 0);
+      let score = row.count;
+      if (sort === 'rising') score = row.recent;
+      else if (sort === 'new') score = row.first;
+      else if (sort === 'gems') {
+        score = (totalNotes > 0 ? 1_000_000 : 0)
+          + (row.count >= 2 && row.count <= 8 ? 200_000 : row.count === 1 ? 100_000 : 0)
+          + (row.votes * 5000) + (totalNotes * 2000) - (row.count * 50);
+      }
+      filtered.push({ ...row, score });
+    }
+
+    filtered.sort((a, b) =>
+      (b.score - a.score) ||
+      (b.count - a.count) ||
+      (b.last - a.last) ||
+      a.key.localeCompare(b.key)
+    );
+    return filtered.slice(offset, offset + limit);
+  }
+
+  function getThemeCounts({ hideSystem = false } = {}) {
+    const rows = getAllActiveApps.all(now() - 30 * day, '', '');
+    const counts = new Map(STANDARD_THEMES.map(t => [t.id, 0]));
+    for (const raw of rows) {
+      if (hideSystem && raw.is_system) continue;
+      const categories = JSON.parse(raw.categories);
+      for (const tid of enrichThemes({ ...raw, categories })) {
+        if (counts.has(tid)) counts.set(tid, counts.get(tid) + 1);
+      }
+    }
+    return STANDARD_THEMES.map(t => ({ ...t, count: counts.get(t.id) ?? 0 })).filter(t => t.count > 0);
+  }
 
   const getApp = db.prepare(`
     SELECT m.app_key AS key, MIN(m.name) AS name, COUNT(DISTINCT m.share_id) AS count,
@@ -472,6 +574,26 @@ export function createSoftwareServer({
     FROM app_mentions AS m ${publicJoin} WHERE m.app_key=? AND m.note IS NOT NULL
     GROUP BY s.id ORDER BY votes DESC, s.created DESC, s.id DESC LIMIT 40
   `);
+  const getReviews = db.prepare(`
+    SELECT r.id, r.app_key, r.author, r.kind, r.note, r.created,
+      (SELECT COUNT(*) FROM app_review_votes AS rv WHERE rv.review_id=r.id) AS votes
+    FROM app_reviews AS r
+    WHERE r.app_key=?
+    ORDER BY votes DESC, r.created DESC, r.id DESC
+    LIMIT 40
+  `);
+  const insertReview = db.prepare(`
+    INSERT INTO app_reviews (app_key, author, kind, note, voter_hash, created) VALUES (?,?,?,?,?,?)
+  `);
+  const recentReviewByIp = db.prepare(`
+    SELECT 1 AS ok FROM app_reviews WHERE app_key=? AND voter_hash=? AND created >= ? LIMIT 1
+  `);
+  const hasReview = db.prepare('SELECT 1 AS ok FROM app_reviews WHERE id=?');
+  const hasReviewVote = db.prepare('SELECT 1 AS ok FROM app_review_votes WHERE review_id=? AND voter_hash=?');
+  const insertReviewVote = db.prepare('INSERT OR IGNORE INTO app_review_votes (review_id, voter_hash, created) VALUES (?,?,?)');
+  const deleteReviewVote = db.prepare('DELETE FROM app_review_votes WHERE review_id=? AND voter_hash=?');
+  const countReviewVotes = db.prepare('SELECT COUNT(*) AS count FROM app_review_votes WHERE review_id=?');
+
   const getFeaturedReasons = db.prepare(`
     SELECT s.id, s.name AS author, s.title, s.role, s.created,
       m.app_key AS app_key, MIN(m.name) AS app_name, MIN(m.note) AS note,
@@ -482,6 +604,14 @@ export function createSoftwareServer({
     GROUP BY m.app_key, s.id
     ORDER BY votes DESC, s.created DESC, s.id DESC
     LIMIT 24
+  `);
+  const getFeaturedReviews = db.prepare(`
+    SELECT r.id, r.author, r.kind, r.note, r.created, r.app_key,
+      COALESCE((SELECT MIN(m.name) FROM app_mentions AS m ${publicJoin} WHERE m.app_key=r.app_key), r.app_key) AS app_name,
+      ${consensusIcon('r.app_key')} AS icon,
+      (SELECT COUNT(*) FROM app_review_votes AS rv WHERE rv.review_id=r.id) AS votes
+    FROM app_reviews AS r
+    ORDER BY votes DESC, r.created DESC LIMIT 12
   `);
   const getTogether = db.prepare(`
     SELECT o.app_key AS key, MIN(o.name) AS name, COUNT(DISTINCT o.share_id) AS count, ${consensusIcon('o.app_key')} AS icon
@@ -506,6 +636,20 @@ export function createSoftwareServer({
     GROUP BY o.app_key
     ORDER BY count DESC, o.app_key
     LIMIT 8
+  `);
+  const getPairOverlap = db.prepare(`
+    SELECT
+      COUNT(DISTINCT CASE WHEN has_a=1 AND has_b=0 THEN share_id END) AS only_a,
+      COUNT(DISTINCT CASE WHEN has_a=0 AND has_b=1 THEN share_id END) AS only_b,
+      COUNT(DISTINCT CASE WHEN has_a=1 AND has_b=1 THEN share_id END) AS both
+    FROM (
+      SELECT m.share_id,
+        MAX(CASE WHEN m.app_key=? THEN 1 ELSE 0 END) AS has_a,
+        MAX(CASE WHEN m.app_key=? THEN 1 ELSE 0 END) AS has_b
+      FROM app_mentions AS m ${publicJoin}
+      WHERE m.app_key IN (?, ?)
+      GROUP BY m.share_id
+    )
   `);
   const getSimilar = db.prepare(`
     SELECT s.${summary.split(',').join(', s.')}, COUNT(DISTINCT o.app_key) AS shared
@@ -554,20 +698,6 @@ export function createSoftwareServer({
     return getGallery.all(q, q, q, q, q, q, resolvedApp, category, resolvedApp, resolvedApp, category, category, role, role, author, author, limit, offset);
   };
 
-  const suggestApps = db.prepare(`
-    SELECT m.app_key AS key, MIN(m.name) AS name, COUNT(DISTINCT m.share_id) AS count,
-      ${consensusIcon('m.app_key')} AS icon,
-      (SELECT MIN(cm.category) FROM app_mentions AS cm JOIN shares AS cs ON cm.share_id=cs.id AND cs.visibility='public'
-        WHERE cm.app_key=m.app_key GROUP BY cm.category_key ORDER BY COUNT(DISTINCT cm.share_id) DESC LIMIT 1) AS category,
-      COALESCE(md.cask, '') AS cask
-    FROM app_mentions AS m ${publicJoin}
-    LEFT JOIN app_metadata AS md ON md.app_key=m.app_key
-    WHERE ?='' OR instr(m.app_key, lower(?))>0 OR instr(lower(m.name), lower(?))>0
-      OR EXISTS (SELECT 1 FROM app_aliases AS a WHERE a.canonical_key=m.app_key AND instr(a.alias_key, lower(?))>0)
-    GROUP BY m.app_key
-    ORDER BY (m.app_key=lower(?)) DESC, (instr(m.app_key, lower(?))=1) DESC, count DESC, m.app_key
-    LIMIT ?
-  `);
   const suggestCategories = db.prepare(`
     SELECT MIN(m.category) AS name, COUNT(DISTINCT m.app_key) AS count
     FROM app_mentions AS m ${publicJoin}
@@ -589,6 +719,104 @@ export function createSoftwareServer({
   const buckets = new Map();
   const ogCache = createOgCache(64);
   let processing = 0;
+
+  function buildFreeAlternatives(key, meta) {
+    const direct = FREE_ALTERNATIVES[key] ?? [];
+    const results = [];
+    const seen = new Set([key]);
+
+    for (const altKey of direct) {
+      if (seen.has(altKey)) continue;
+      seen.add(altKey);
+      const live = getApp.get(altKey);
+      const altMeta = getMeta.get(altKey) ?? BUILTIN_BY_KEY.get(altKey);
+      if (!live && !altMeta) continue;
+      results.push({
+        key: altKey,
+        name: live?.name ?? altMeta?.name ?? altKey,
+        count: live?.count ?? 0,
+        icon: live?.icon ?? null,
+        inCatalog: Boolean(live),
+        pricing: altMeta?.pricing ?? '免费',
+        cask: altMeta?.cask ?? '',
+        homepage: altMeta?.homepage ?? '',
+        summary: altMeta?.summary ?? '',
+      });
+    }
+
+    // If paid/freemium and still fewer than 3 alternatives, find free/open-source apps in same theme
+    const isPaid = String(meta?.pricing ?? '').includes('付费');
+    if (isPaid && results.length < 3) {
+      const themes = String(meta?.themes ?? '').split(',').filter(Boolean);
+      if (themes.length) {
+        const peers = apps({ theme: themes[0], pricing: 'foss', hideSystem: true, limit: 6 });
+        for (const p of peers) {
+          if (seen.has(p.key)) continue;
+          seen.add(p.key);
+          results.push({
+            key: p.key,
+            name: p.name,
+            count: p.count,
+            icon: p.icon,
+            inCatalog: true,
+            pricing: p.pricing,
+            cask: p.cask,
+            homepage: p.homepage,
+            summary: p.summary,
+          });
+          if (results.length >= 4) break;
+        }
+      }
+    }
+    return results;
+  }
+
+  function buildSetupPacks() {
+    const liveTop = apps({ sort: 'top', hideSystem: true, limit: 15 });
+    const enrichApp = (k) => {
+      const live = getApp.get(k);
+      const meta = getMeta.get(k) ?? BUILTIN_BY_KEY.get(k);
+      if (!live && !meta) return null;
+      return {
+        key: k,
+        name: live?.name ?? meta?.name ?? k,
+        count: live?.count ?? 0,
+        icon: live?.icon ?? null,
+        inCatalog: Boolean(live),
+        cask: meta?.cask ?? '',
+        homepage: meta?.homepage ?? '',
+        masUrl: meta?.mas_url ?? meta?.masUrl ?? '',
+        pricing: meta?.pricing ?? '',
+        summary: meta?.summary ?? '',
+      };
+    };
+
+    const packs = SETUP_PACKS.map(pack => ({
+      ...pack,
+      items: pack.apps.map(enrichApp).filter(Boolean),
+    }));
+
+    if (liveTop.length >= 3) {
+      packs.unshift({
+        id: 'community-top',
+        name: '全站社区投票 Top 15',
+        desc: '直接根据本站所有真实桌面海报投票排序生成的热门主力软件（已自动排除系统自带应用）。',
+        items: liveTop.map(a => ({
+          key: a.key,
+          name: a.name,
+          count: a.count,
+          icon: a.icon,
+          inCatalog: true,
+          cask: a.cask,
+          homepage: a.homepage,
+          masUrl: a.mas_url,
+          pricing: a.pricing,
+          summary: a.summary,
+        })),
+      });
+    }
+    return packs;
+  }
 
   function withIcons(rows) {
     const items = rows.map(row => JSON.parse(row.apps));
@@ -753,6 +981,7 @@ export function createSoftwareServer({
       }
     }
     if (!cleaned.length || cleaned.length > 48) throw new RequestError(400, '请选择 1–48 款软件。');
+    const selectedKeys = new Set(cleaned.map(c => c.key));
     const stats = getStats.get();
     const totalPosters = Math.max(0, stats.posters);
 
@@ -777,24 +1006,21 @@ export function createSoftwareServer({
 
     const catCounts = new Map();
     for (const d of details) {
-      for (const c of d.categories.slice(0, 2)) {
-        catCounts.set(c, (catCounts.get(c) ?? 0) + 1);
-      }
+      for (const c of d.categories.slice(0, 2)) catCounts.set(c, (catCounts.get(c) ?? 0) + 1);
     }
     const topCategories = [...catCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, count]) => ({ name, count }));
 
     let persona = '实用主义 Mac 玩家';
-    if (topCategories.length >= 2) {
-      persona = `${topCategories[0].name} × ${topCategories[1].name}派`;
-    } else if (topCategories.length === 1) {
-      persona = `深度「${topCategories[0].name}」派`;
-    }
+    if (topCategories.length >= 2) persona = `${topCategories[0].name} × ${topCategories[1].name}派`;
+    else if (topCategories.length === 1) persona = `深度「${topCategories[0].name}」派`;
+
     const avgRate = details.length ? Math.round(details.reduce((s, d) => s + d.rate, 0) / details.length) : 0;
     const uniqueness = Math.max(0, Math.min(100, 100 - avgRate));
 
     const keysJson = JSON.stringify(cleaned.map(c => c.key));
     const similarRaw = getSimilarForKeys.all(keysJson);
-    const similar = withIcons(similarRaw).map(row => {
+    const similarWithIcons = withIcons(similarRaw);
+    const similar = similarWithIcons.map(row => {
       const union = new Set([...cleaned.map(c => c.key), ...row.items.map(i => i.key)]).size;
       return {
         id: row.id,
@@ -810,6 +1036,63 @@ export function createSoftwareServer({
       };
     });
 
+    // Collaborative Filtering: what do the most similar peers use that the user doesn't have yet?
+    const peerPool = similarWithIcons.length ? similarWithIcons.slice(0, 5) : withIcons(gallery({ limit: 5 }));
+    const peerCounts = new Map();
+    for (const poster of peerPool) {
+      const seenInPoster = new Set();
+      for (const item of poster.items) {
+        if (selectedKeys.has(item.key) || seenInPoster.has(item.key)) continue;
+        seenInPoster.add(item.key);
+        const meta = getMeta.get(item.key);
+        if (meta?.is_system) continue;
+        const cur = peerCounts.get(item.key) ?? {
+          key: item.key,
+          name: item.canonicalName || item.name,
+          icon: item.icon,
+          peerCount: 0,
+          totalPeers: peerPool.length,
+          cask: meta?.cask ?? '',
+          homepage: meta?.homepage ?? '',
+          pricing: meta?.pricing ?? '',
+          summary: meta?.summary ?? '',
+        };
+        cur.peerCount++;
+        peerCounts.set(item.key, cur);
+      }
+    }
+    const missingRecommended = [...peerCounts.values()]
+      .sort((a, b) => b.peerCount - a.peerCount || a.name.localeCompare(b.name))
+      .slice(0, 6);
+
+    // 7-Pillar Productivity Gap Audit
+    const enrichSlotPick = (k) => {
+      const live = getApp.get(k);
+      const meta = getMeta.get(k) ?? BUILTIN_BY_KEY.get(k);
+      return {
+        key: k,
+        name: live?.name ?? meta?.name ?? k,
+        icon: live?.icon ?? null,
+        inCatalog: Boolean(live),
+        cask: meta?.cask ?? '',
+        homepage: meta?.homepage ?? '',
+        pricing: meta?.pricing ?? '',
+        summary: meta?.summary ?? '',
+      };
+    };
+    const gapAudit = AUDIT_SLOTS.map(slot => {
+      const matched = slot.apps.filter(k => selectedKeys.has(k)).map(k => details.find(d => d.key === k)?.name ?? k);
+      return {
+        id: slot.id,
+        name: slot.name,
+        why: slot.why,
+        covered: matched.length > 0,
+        matched,
+        champion: enrichSlotPick(slot.champion),
+        freePick: slot.freePick !== slot.champion ? enrichSlotPick(slot.freePick) : null,
+      };
+    });
+
     return {
       totalPosters,
       selectedCount: details.length,
@@ -821,6 +1104,8 @@ export function createSoftwareServer({
       niche,
       details,
       similar,
+      missingRecommended,
+      gapAudit,
     };
   }
 
@@ -877,8 +1162,17 @@ export function createSoftwareServer({
       for (const r of getFeaturedReasons.all()) {
         if (!seenReasonApps.has(r.app_key)) {
           seenReasonApps.add(r.app_key);
-          featuredReasons.push(r);
+          featuredReasons.push({ ...r, source: 'poster' });
           if (featuredReasons.length >= 6) break;
+        }
+      }
+      if (featuredReasons.length < 6) {
+        for (const r of getFeaturedReviews.all()) {
+          if (!seenReasonApps.has(r.app_key)) {
+            seenReasonApps.add(r.app_key);
+            featuredReasons.push({ ...r, id: '', title: '', source: 'review' });
+            if (featuredReasons.length >= 6) break;
+          }
         }
       }
       return page(home({
@@ -888,6 +1182,7 @@ export function createSoftwareServer({
         rising: rising.length >= 6,
         latest: withIcons(gallery({ limit: 7 })),
         categories: getCategories.all('').slice(0, 12),
+        themes: getThemeCounts(),
         roles: getRoles.all().slice(0, 8),
         featuredReasons,
       }));
@@ -918,15 +1213,24 @@ export function createSoftwareServer({
     if (read && pathname === '/apps') {
       const q = search('q', 60);
       const category = search('category', 14);
+      const theme = THEME_BY_ID.has(url.searchParams.get('theme')) ? url.searchParams.get('theme') : '';
+      const pricing = ['foss', 'free', 'paid'].includes(url.searchParams.get('pricing')) ? url.searchParams.get('pricing') : '';
+      const brew = url.searchParams.get('brew') === '1';
+      const hideSystem = url.searchParams.get('hide_system') === '1';
       const sort = ['top', 'rising', 'new', 'gems'].includes(url.searchParams.get('sort')) ? url.searchParams.get('sort') : 'top';
       const number = pageNumber(8000);
-      const items = apps({ q, category, sort, limit: 25, offset: (number - 1) * 24 });
+      const items = apps({ q, category, theme, pricing, brew, hideSystem, sort, limit: 25, offset: (number - 1) * 24 });
       return page(appsPage({
         ...context,
         apps: items.slice(0, 24),
         categories: getCategories.all(category),
+        themes: getThemeCounts({ hideSystem }),
         q,
         category,
+        theme,
+        pricing,
+        brew,
+        hideSystem,
         sort,
         page: number,
         hasNext: items.length > 24 && number < 8000,
@@ -948,16 +1252,50 @@ export function createSoftwareServer({
       }
       const app = getApp.get(key);
       if (!app) throw new RequestError(404, '还没有公开海报推荐这个软件。');
-      const meta = getMeta.get(key) ?? { homepage: '', cask: '', mas_url: '', pricing: '', summary: '' };
+      const meta = getMeta.get(key) ?? { homepage: '', cask: '', mas_url: '', pricing: '', summary: '', themes: '', keywords: '', is_system: 0 };
+      const freeAlternatives = buildFreeAlternatives(key, meta);
       return page(appPage({
         ...context,
         app: { ...app, ...meta },
         categories: getAppCategories.all(key),
         reasons: getReasons.all(key),
+        reviews: getReviews.all(key),
         together: getTogether.all(key),
         alternatives: getAlternatives.all(key, key),
+        freeAlternatives,
         posters: withIcons(gallery({ app: key, limit: 12 })),
       }));
+    }
+
+    if (read && pathname === '/compare') {
+      const rawA = search('a', 60);
+      const rawB = search('b', 60);
+      const keyA = rawA ? resolveCanonicalKey(rawA) : '';
+      const keyB = rawB ? resolveCanonicalKey(rawB) : '';
+      const loadSide = (k) => {
+        if (!k) return null;
+        const app = getApp.get(k);
+        if (!app) return null;
+        const meta = getMeta.get(k) ?? { homepage: '', cask: '', mas_url: '', pricing: '', summary: '' };
+        return {
+          ...app,
+          ...meta,
+          categories: getAppCategories.all(k),
+          reasons: getReasons.all(k).slice(0, 5),
+          reviews: getReviews.all(k).slice(0, 5),
+        };
+      };
+      const sideA = loadSide(keyA);
+      const sideB = loadSide(keyB);
+      const overlap = sideA && sideB && sideA.key !== sideB.key
+        ? getPairOverlap.get(sideA.key, sideB.key, sideA.key, sideB.key)
+        : null;
+      const topChoices = apps({ sort: 'top', hideSystem: true, limit: 40 });
+      return page(comparePage({ ...context, sideA, sideB, overlap, topChoices, stats: getStats.get() }));
+    }
+
+    if (read && pathname === '/setup') {
+      return page(setupPage({ ...context, packs: buildSetupPacks(), stats: getStats.get() }));
     }
 
     const ogAppRoute = pathname.match(/^\/og\/apps\/([^/]+)\.png$/);
@@ -968,7 +1306,7 @@ export function createSoftwareServer({
       const app = getApp.get(resolvedKey);
       if (!app) throw new RequestError(404, '没有找到这个软件。');
       const categories = getAppCategories.all(resolvedKey);
-      const topReason = getReasons.all(resolvedKey)[0]?.note ?? '';
+      const topReason = getReasons.all(resolvedKey)[0]?.note ?? getReviews.all(resolvedKey)[0]?.note ?? '';
       const cacheKey = `${resolvedKey}:${app.count}:${app.icon ?? ''}:${topReason}`;
       let png = ogCache.get(cacheKey);
       if (!png) {
@@ -1009,12 +1347,12 @@ export function createSoftwareServer({
     }
 
     if (read && pathname === '/taste') {
-      const topApps = apps({ sort: 'top', limit: 40 });
+      const topApps = apps({ sort: 'top', hideSystem: true, limit: 40 });
       return page(tastePage({ ...context, topApps, stats: getStats.get() }));
     }
 
     if (read && pathname === '/studio') {
-      const topApps = apps({ sort: 'top', limit: 36 });
+      const topApps = apps({ sort: 'top', hideSystem: true, limit: 36 });
       const cats = getCategories.all('').slice(0, 12).map(c => c.name);
       return page(studioPage({ ...context, topApps, categories: cats, roles: ROLES, stats: getStats.get() }));
     }
@@ -1031,7 +1369,7 @@ export function createSoftwareServer({
     }
     if (read && pathname === '/sitemap.xml') {
       const links = [
-        '/', '/posters', '/apps', '/taste', '/studio', '/make', '/privacy',
+        '/', '/posters', '/apps', '/setup', '/taste', '/compare', '/studio', '/make', '/privacy',
         ...getSitemapApps.all().map(row => '/apps/' + encodeURIComponent(row.key)),
         ...getSitemap.all().map(row => '/s/' + row.id),
       ];
@@ -1048,42 +1386,98 @@ export function createSoftwareServer({
       } catch { throw new RequestError(404, '找不到这个文件。'); }
     }
 
-    // Public read-only APIs + instant search suggest
+    // Instant search autocomplete (matches name, alias, summary, and Chinese pain-point keywords!)
     if (read && pathname === '/api/v1/suggest') {
       const q = search('q', 60);
-      const appHits = suggestApps.all(q, q, q, q, q, q, q ? 8 : 6).map(a => ({
+      const hits = apps({ q, limit: q ? 8 : 6 }).map(a => ({
         key: a.key,
         name: a.name,
         count: a.count,
         icon: a.icon ? '/icons/' + a.icon + '.webp' : null,
         iconHash: a.icon ?? null,
-        category: a.category ?? '',
+        category: a.categories?.[0] ?? '',
+        pricing: a.pricing ?? '',
+        summary: a.summary ?? '',
         cask: a.cask ?? '',
       }));
       const catHits = q ? suggestCategories.all(q) : [];
-      return publicJson(res, 200, { apps: appHits, categories: catHits });
+      return publicJson(res, 200, { apps: hits, categories: catHits });
     }
 
     if (read && pathname === '/api/v1/apps') {
       const q = search('q', 60);
       const category = search('category', 14);
+      const theme = THEME_BY_ID.has(url.searchParams.get('theme')) ? url.searchParams.get('theme') : '';
+      const pricing = ['foss', 'free', 'paid'].includes(url.searchParams.get('pricing')) ? url.searchParams.get('pricing') : '';
+      const brew = url.searchParams.get('brew') === '1';
+      const hideSystem = url.searchParams.get('hide_system') === '1';
       const sort = ['top', 'rising', 'new', 'gems'].includes(url.searchParams.get('sort')) ? url.searchParams.get('sort') : 'top';
       const limitCount = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') ?? '24', 10) || 24));
       const offset = Math.max(0, parseInt(url.searchParams.get('offset') ?? '0', 10) || 0);
-      const items = apps({ q, category, sort, limit: limitCount, offset }).map(item => ({
+      const items = apps({ q, category, theme, pricing, brew, hideSystem, sort, limit: limitCount, offset }).map(item => ({
         key: item.key,
         name: item.name,
         count: item.count,
         recent: item.recent,
         categories: item.categories,
+        themes: item.themes,
         note: item.note ?? '',
+        summary: item.summary || null,
         icon: item.icon ? origin + '/icons/' + item.icon + '.webp' : null,
         homepage: item.homepage || null,
         cask: item.cask || null,
         pricing: item.pricing || null,
+        isSystem: item.is_system,
         url: origin + '/apps/' + encodeURIComponent(item.key),
       }));
       return publicJson(res, 200, { stats: getStats.get(), sort, items });
+    }
+
+    const apiAppReviewRoute = pathname.match(/^\/api\/v1\/apps\/([^/]+)\/reviews$/);
+    if (method === 'POST' && apiAppReviewRoute) {
+      limit(req, 'review', 12);
+      let key;
+      try { key = resolveCanonicalKey(decodeURIComponent(apiAppReviewRoute[1])); } catch { throw new RequestError(404, '没有找到这个软件。'); }
+      if (!getApp.get(key)) throw new RequestError(404, '还没有公开海报推荐这个软件。');
+      const body = await readJson(req, 1500);
+      const note = clean(body?.note, 60, '体验内容');
+      if (Array.from(note).length < 4) throw new RequestError(400, '请至少写 4 个字，让别人更看懂你的经验。');
+      const author = cleanOptional(body?.author, 24, '署名') || '匿名 Mac 用户';
+      const kind = ['recommend', 'tip', 'caveat'].includes(body?.kind) ? body.kind : 'tip';
+      const voterHash = sha('review:' + clientIp(req));
+      if (recentReviewByIp.get(key, voterHash, now() - day)) {
+        throw new RequestError(429, '你今天已经为这款软件补充过一条体验了。');
+      }
+      const created = now();
+      const info = insertReview.run(key, author, kind, note, voterHash, created);
+      return json(res, 201, {
+        id: Number(info.lastInsertRowid),
+        appKey: key,
+        author,
+        kind,
+        note,
+        votes: 0,
+        created,
+      });
+    }
+
+    if (method === 'POST' && pathname === '/api/v1/reviews/vote') {
+      limit(req, 'vote', 60);
+      const body = await readJson(req, 1024);
+      const reviewId = Number(body?.reviewId);
+      if (!Number.isInteger(reviewId) || reviewId <= 0 || !hasReview.get(reviewId)) {
+        throw new RequestError(404, '找不到这条点评。');
+      }
+      const voterHash = sha('rvote:' + clientIp(req));
+      let voted;
+      if (hasReviewVote.get(reviewId, voterHash)) {
+        deleteReviewVote.run(reviewId, voterHash);
+        voted = false;
+      } else {
+        insertReviewVote.run(reviewId, voterHash, now());
+        voted = true;
+      }
+      return json(res, 200, { voted, votes: countReviewVotes.get(reviewId).count });
     }
 
     const apiAppRoute = pathname.match(/^\/api\/v1\/apps\/([^/]+)$/);
@@ -1092,7 +1486,7 @@ export function createSoftwareServer({
       try { key = resolveCanonicalKey(decodeURIComponent(apiAppRoute[1])); } catch { throw new RequestError(404, '没有找到这个软件。'); }
       const app = getApp.get(key);
       if (!app) throw new RequestError(404, '没有找到这个软件。');
-      const meta = getMeta.get(key) ?? { homepage: '', cask: '', mas_url: '', pricing: '', summary: '' };
+      const meta = getMeta.get(key) ?? { homepage: '', cask: '', mas_url: '', pricing: '', summary: '', themes: '' };
       return publicJson(res, 200, {
         key: app.key,
         name: app.name,
@@ -1110,8 +1504,10 @@ export function createSoftwareServer({
         reasons: getReasons.all(key).map(r => ({
           shareId: r.id, author: r.author, title: r.title, role: r.role ?? '', note: r.note, votes: r.votes, created: r.created,
         })),
+        reviews: getReviews.all(key),
         together: getTogether.all(key).map(t => ({ key: t.key, name: t.name, count: t.count })),
         alternatives: getAlternatives.all(key, key).map(a => ({ key: a.key, name: a.name, count: a.count })),
+        freeAlternatives: buildFreeAlternatives(key, meta),
         url: origin + '/apps/' + encodeURIComponent(app.key),
       });
     }
@@ -1138,13 +1534,49 @@ export function createSoftwareServer({
       return publicJson(res, 200, { items });
     }
 
+    if (method === 'POST' && pathname === '/api/v1/parse-apps') {
+      limit(req, 'parse', 40);
+      const body = await readJson(req, 32_000);
+      const parsedNames = parseApplicationsPaste(body?.rawText ?? '');
+      if (!parsedNames.length) throw new RequestError(400, '没有识别到应用名称，请粘贴 ls /Applications 的输出。');
+      const themeToDefaultGroup = {
+        ai: 'AI 工具', dev: '开发', productivity: '效率', notes: '写作',
+        browser: '浏览', system: '系统', media: '影音', design: '设计', chat: '沟通',
+      };
+      const items = [];
+      const seen = new Set();
+      for (const rawName of parsedNames) {
+        const resolved = resolveCanonical(rawName);
+        if (seen.has(resolved.key)) continue;
+        seen.add(resolved.key);
+        const live = getApp.get(resolved.key);
+        const meta = getMeta.get(resolved.key) ?? BUILTIN_BY_KEY.get(resolved.key);
+        const cats = live ? getAppCategories.all(resolved.key) : [];
+        const firstTheme = String(meta?.themes ?? '').split(',').filter(Boolean)[0];
+        const group = cats[0]?.name ?? themeToDefaultGroup[firstTheme] ?? '效率';
+        items.push({
+          key: resolved.key,
+          name: live?.name ?? meta?.name ?? rawName,
+          group,
+          icon: live?.icon ?? '',
+          isSystem: Boolean(meta?.is_system || meta?.system),
+          inCatalog: Boolean(live),
+        });
+      }
+      return json(res, 200, { items });
+    }
+
     if (method === 'POST' && pathname === '/api/v1/taste') {
       limit(req, 'taste', 40);
-      const body = await readJson(req, 16_000);
-      if (!Array.isArray(body?.apps) || body.apps.length < 1 || body.apps.length > 48) {
+      const body = await readJson(req, 32_000);
+      let list = Array.isArray(body?.apps) ? body.apps : [];
+      if (!list.length && typeof body?.rawText === 'string') {
+        list = parseApplicationsPaste(body.rawText);
+      }
+      if (!list.length || list.length > 48) {
         throw new RequestError(400, '请至少选择 1 款软件（最多 48 款）。');
       }
-      return json(res, 200, analyzeTaste(body.apps));
+      return json(res, 200, analyzeTaste(list));
     }
 
     if (method === 'POST' && pathname === '/api/v1/reasons/vote') {
@@ -1205,7 +1637,6 @@ export function createSoftwareServer({
 
     const api = pathname.match(new RegExp('^/api/v1/shares/(' + idPattern + ')(/reports)?$'));
     if (read && api && !api[2]) {
-      // Allow studio owner (with Bearer token) to fetch their share JSON for editing
       const owner = req.headers.authorization?.match(/^Bearer ([a-f0-9]{64})$/)?.[1];
       const existing = getOwner.get(api[1]);
       if (!owner || !existing || !timingSafeEqual(Buffer.from(existing.owner_hash), Buffer.from(sha('owner:' + owner)))) {
