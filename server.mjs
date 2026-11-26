@@ -1388,22 +1388,36 @@ export function createSoftwareServer({
     if (read && pathname === '/studio') {
       const liveApps = apps({ sort: 'top', limit: 200 });
       const themeToGroup = {
-        ai: 'AI 与开发', dev: 'AI 与开发', productivity: '效率与工具', notes: '写作与办公',
+        ai: 'AI 与开发', harness: 'AI 与开发', dev: 'AI 与开发', productivity: '效率与工具', notes: '写作与办公',
         browser: '浏览与沟通', system: '效率与工具', media: '创作', design: '创作', chat: '浏览与沟通',
       };
+      const buildSearchText = (b, summary = '') => [
+        ...(b?.aliases ?? []),
+        b?.keywords ?? '',
+        summary,
+      ].filter(Boolean).join(' ').toLowerCase();
+
       const merged = [];
       const seenKeys = new Set();
       for (const a of liveApps) {
         seenKeys.add(a.key);
-        merged.push({ ...a, icon: a.icon || presetIconsMap[a.key] || '' });
+        const builtin = BUILTIN_BY_KEY.get(a.key);
+        const themes = [...new Set([...(a.themes ?? []), ...(builtin?.themes ?? [])])];
+        merged.push({
+          ...a,
+          themes,
+          icon: a.icon || presetIconsMap[a.key] || '',
+          searchText: buildSearchText(builtin, a.summary),
+        });
       }
+      const curatedOnly = [];
       for (const b of BUILTIN_APPS) {
         if (b.system) continue;
         const k = normalizeAppKey(b.name);
         if (seenKeys.has(k)) continue;
         seenKeys.add(k);
         const firstTheme = b.themes?.[0] ?? '';
-        merged.push({
+        curatedOnly.push({
           key: k,
           name: b.name,
           count: 0,
@@ -1411,9 +1425,16 @@ export function createSoftwareServer({
           themes: b.themes ?? [],
           icon: presetIconsMap[k] || '',
           summary: b.summary ?? '',
+          searchText: buildSearchText(b, b.summary),
           is_system: false,
         });
       }
+      // Surface AI Harness & AI tools first among curated items so users immediately see them
+      curatedOnly.sort((a, b) => {
+        const rank = (x) => (x.themes.includes('harness') ? 0 : x.themes.includes('ai') ? 1 : 2);
+        return rank(a) - rank(b);
+      });
+      merged.push(...curatedOnly);
       const themeCounts = STANDARD_THEMES.map(t => ({
         ...t,
         count: merged.filter(a => (a.themes ?? []).includes(t.id)).length,

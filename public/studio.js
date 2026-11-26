@@ -472,8 +472,12 @@
       const themes = (btn.dataset.catalogThemes || '').split(',').filter(Boolean);
       const matchTheme = activeThemeFilter === '__selected'
         ? chosenKeys.has(key)
-        : (!activeThemeFilter || themes.includes(activeThemeFilter));
-      const matchQ = !q || key.includes(q) || (app?.name || '').toLowerCase().includes(q) || (app?.summary || '').toLowerCase().includes(q);
+        : (q ? true : (!activeThemeFilter || themes.includes(activeThemeFilter)));
+      const matchQ = !q
+        || key.includes(q)
+        || (app?.name || '').toLowerCase().includes(q)
+        || (app?.summary || '').toLowerCase().includes(q)
+        || (app?.searchText || '').includes(q);
       btn.closest('li').hidden = !(matchTheme && matchQ);
     }
   }

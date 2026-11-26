@@ -848,12 +848,13 @@ export function studioPage({ origin, umamiId, catalogApps = [], wallpapers = [],
     themes: a.themes ?? [],
     icon: a.icon ?? '',
     summary: a.summary ?? '',
+    searchText: a.searchText ?? '',
     isSystem: Boolean(a.is_system),
   }));
 
   return frame({
     title: '在线制作你的 Mac 软件推荐海报',
-    description: '选软件、换壁纸、填署名，30 秒在线生成高清 Mac 软件推荐海报，内置 130+ 真实图标与 20 张精选壁纸。',
+    description: '选软件、换壁纸、填署名，30 秒在线生成高清 Mac 软件推荐海报，内置 200+ 真实图标（全面覆盖热门 AI Harness 与 AI 工具）与 20 张精选壁纸。',
     origin, umamiId, path: '/studio', current: 'studio', extraScript: studioAsset, main: `
 <section class="shell studio-v3" id="studio-root">
   <header class="studio-top">
@@ -895,7 +896,7 @@ export function studioPage({ origin, umamiId, catalogApps = [], wallpapers = [],
     <div class="modal-head">
       <div>
         <h2 id="apps-modal-title">选择软件（<span class="num" id="modal-app-count">0</span> / 48）</h2>
-        <p class="kit-sub">收录全站提交与热门 AI / Mac 应用，均配真实图标</p>
+        <p class="kit-sub">收录全站提交与 200+ 热门 AI Harness / AI 工具 / Mac 应用，均配真实图标</p>
       </div>
       <div class="actions">
         <button type="button" class="button secondary small" id="studio-pick-hot">热门 12 款</button>
