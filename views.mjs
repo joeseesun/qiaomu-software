@@ -111,31 +111,45 @@ function kitButton(app, { label = false } = {}) {
   return `<button type="button" class="icon-btn kit-toggle" data-kit-toggle="${payload}" aria-pressed="false" aria-label="将 ${esc(app.name)} 加入装机清单" title="加入装机清单">${glyph('plus')}</button>`;
 }
 
-function frame({ origin, umamiId, title, description = siteDescription, path = '/', photo = demoAsset, hidden = false, current = '', extraScript = '', main }) {
+function frame({ origin, umamiId, title, description = siteDescription, path = '/', photo = demoAsset, hidden = false, current = '', extraScript = '', jsonLd = null, main }) {
   const fullTitle = title === '乔木软件推荐' ? title + ' · 大家真正在用的 Mac 软件' : title + ' · 乔木软件推荐';
   const analytics = /^[0-9a-f-]{36}$/i.test(umamiId ?? '') ?
     `<script defer src="https://umami.qiaomu.ai/script.js" data-website-id="${esc(umamiId)}" data-domains="${esc(new URL(origin).hostname)}"></script>` : '';
+  const ldItems = jsonLd ? (Array.isArray(jsonLd) ? jsonLd : [jsonLd]).filter(Boolean) : [];
+  const ldHtml = ldItems.map(item => `<script type="application/ld+json">${safeJsonScript(item)}</script>`).join('\n');
   const nav = (link, label, key) => `<a href="${link}"${current === key ? ' aria-current="page"' : ''}>${label}</a>`;
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
-<meta name="theme-color" content="#0c0e12">
+<meta name="theme-color" content="#0b0d11">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="乔木软件">
 <title>${esc(fullTitle)}</title>
 <meta name="description" content="${esc(description)}">
 <link rel="canonical" href="${esc(origin + path)}">
-<link rel="alternate" type="application/rss+xml" title="乔木软件推荐" href="${esc(origin)}/feed.xml">
-${hidden ? '<meta name="robots" content="noindex, nofollow">' : ''}
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="${markAsset}">
+<link rel="alternate" type="application/rss+xml" title="乔木软件推荐 RSS" href="${esc(origin)}/feed.xml">
+<link rel="alternate" type="text/markdown" title="乔木软件推荐 LLMs.txt" href="${esc(origin)}/llms.txt">
+${hidden ? '<meta name="robots" content="noindex, nofollow">' : '<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">'}
+<meta property="og:site_name" content="乔木软件推荐">
+<meta property="og:locale" content="zh_CN">
 <meta property="og:type" content="website">
 <meta property="og:title" content="${esc(fullTitle)}">
 <meta property="og:description" content="${esc(description)}">
 <meta property="og:image" content="${esc(origin + photo)}">
 <meta property="og:url" content="${esc(origin + path)}">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${esc(fullTitle)}">
+<meta name="twitter:description" content="${esc(description)}">
+<meta name="twitter:image" content="${esc(origin + photo)}">
 <link rel="icon" href="${markAsset}" type="image/svg+xml">
 <link rel="stylesheet" href="${styleAsset}">
+${ldHtml}
 <script defer src="${scriptAsset}"></script>
 ${extraScript ? `<script defer src="${extraScript}"></script>` : ''}
 ${analytics}
@@ -160,7 +174,7 @@ ${analytics}
   <div class="shell footer-inner">
     <p class="footer-brand"><img src="${markAsset}" width="22" height="22" alt="">乔木软件推荐<span>大家真正在用的 Mac 软件</span></p>
     <nav class="footer-links" aria-label="页脚">
-      <a href="/posters">海报</a><a href="/apps">软件榜</a><a href="/setup">新机装机包</a><a href="/taste">软件体检</a><a href="/compare">软件对比</a><a href="/studio">网页制作</a><a href="/make">Skill 教程</a><a href="/random">随机逛逛</a><a href="/feed.xml">RSS</a><a href="/api/v1/apps">开放 API</a><a href="/privacy">数据与分享说明</a>
+      <a href="/posters">海报</a><a href="/apps">软件榜</a><a href="/setup">新机装机包</a><a href="/taste">软件体检</a><a href="/compare">软件对比</a><a href="/studio">网页制作</a><a href="/make">Skill 教程</a><a href="/random">随机逛逛</a><a href="/feed.xml">RSS</a><a href="/llms.txt">llms.txt</a><a href="/api/v1/apps">开放 API</a><a href="/privacy">数据与分享说明</a>
       <a href="${skill}">Skill 源码</a><a href="${repo}">网站源码</a><a href="https://x.com/vista8">X</a>
       <button type="button" class="footer-button" data-dialog="follow">关注乔木</button>
       <button type="button" class="footer-button" data-dialog="reward">支持乔木</button>
@@ -296,8 +310,46 @@ export function home({ origin, umamiId, stats, popular = [], rising = false, lat
   ${roles.length ? `<ul class="cat-cloud role-cloud">${roles.map(r => `<li><a href="${href('/posters', { role: r.name })}"><span>${esc(r.name)}的桌面</span>${num(r.count)}</a></li>`).join('')}</ul>` : ''}
 </section>` : '';
 
+  const homeJsonLd = [
+    {
+      '@context': 'https://schema.org',
+      '@type': 'WebSite',
+      name: '乔木软件推荐',
+      alternateName: 'Qiaomu Mac Software Recommendations',
+      url: origin + '/',
+      inLanguage: 'zh-CN',
+      description: siteDescription,
+      potentialAction: {
+        '@type': 'SearchAction',
+        target: origin + '/apps?q={search_term_string}',
+        'query-input': 'required name=search_term_string',
+      },
+    },
+    {
+      '@context': 'https://schema.org',
+      '@type': 'Organization',
+      name: '乔木软件推荐',
+      url: origin + '/',
+      logo: origin + markAsset,
+      sameAs: ['https://x.com/vista8', 'https://github.com/joeseesun/qiaomu-software'],
+    },
+    ...(popular.length ? [{
+      '@context': 'https://schema.org',
+      '@type': 'ItemList',
+      name: '大家真正在用的热门 Mac 软件榜',
+      itemListOrder: 'https://schema.org/ItemListOrderDescending',
+      numberOfItems: Math.min(12, popular.length),
+      itemListElement: popular.slice(0, 12).map((a, idx) => ({
+        '@type': 'ListItem',
+        position: idx + 1,
+        name: a.name,
+        url: origin + appHref(a.key),
+      })),
+    }] : []),
+  ];
+
   return frame({
-    title: '乔木软件推荐', origin, umamiId, current: 'home', photo: featured ? image(featured.id) : demoAsset, main: `${hero}
+    title: '乔木软件推荐', origin, umamiId, current: 'home', photo: featured ? image(featured.id) : demoAsset, jsonLd: homeJsonLd, main: `${hero}
 ${utilityStrip}
 ${appsSection}
 ${reasonsSection}
@@ -419,9 +471,50 @@ export function appsPage({ origin, umamiId, apps = [], categories = [], themes =
     gems: '优先展示推荐数偏小众、但有人写过推荐理由或技巧的宝藏软件。',
   };
 
+  const appsJsonLd = [
+    {
+      '@context': 'https://schema.org',
+      '@type': 'CollectionPage',
+      name: activeThemeName ? `${activeThemeName} Mac 软件推荐榜` : 'Mac 软件推荐榜',
+      url: origin + '/apps',
+      inLanguage: 'zh-CN',
+      description: '基于真实 Mac 用户公开桌面海报投票统计的软件推荐榜单，支持按开源免费、Homebrew、场景主题和痛点需求检索。',
+    },
+    {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        { '@type': 'ListItem', position: 1, name: '首页', item: origin + '/' },
+        { '@type': 'ListItem', position: 2, name: '软件榜', item: origin + '/apps' },
+      ],
+    },
+    ...(apps.length ? [{
+      '@context': 'https://schema.org',
+      '@type': 'ItemList',
+      name: activeThemeName ? `${activeThemeName} Mac 软件榜` : '热门 Mac 软件榜',
+      numberOfItems: apps.length,
+      itemListElement: apps.slice(0, 20).map((a, idx) => ({
+        '@type': 'ListItem',
+        position: offset + idx + 1,
+        url: origin + appHref(a.key),
+        name: a.name,
+      })),
+    }] : []),
+  ];
+
+  const isIndexableThemeLanding = Boolean(!q && !category && !brew && !hideSystem && sort === 'top' && page === 1 && (theme || pricing === 'foss'));
+  const appsCanonicalPath = isIndexableThemeLanding
+    ? href('/apps', { theme, pricing })
+    : '/apps';
+
   return frame({
-    title: '软件榜', description: '大家公开推荐过的 Mac 软件，支持按开源免费、Homebrew、场景主题和痛点需求检索。', origin, umamiId, path: '/apps', current: 'apps',
-    hidden: Boolean(filtered || page !== 1), main: `
+    title: activeThemeName ? `${activeThemeName} Mac 软件推荐` : pricing === 'foss' ? '开源免费 Mac 软件精选' : '软件榜',
+    description: activeThemeName
+      ? `真实 Mac 用户公开海报投票选出的热门「${activeThemeName}」软件排行，含定价、Homebrew 一键安装与免费平替。`
+      : '大家公开推荐过的 Mac 软件，支持按开源免费、Homebrew、场景主题和痛点需求检索。',
+    origin, umamiId, path: appsCanonicalPath, current: 'apps',
+    hidden: Boolean((filtered && !isIndexableThemeLanding) || page !== 1),
+    jsonLd: appsJsonLd, main: `
 <section class="shell page-head">
   <div><h1>软件榜</h1><p class="lede">一张公开海报算一票。支持直接搜需求痛点（如「截图」「剪贴板」「外接显示器」），也可按开源免费、Homebrew 精准筛选。</p></div>
   <form class="search" role="search" action="/apps"><label for="apps-q">搜软件名或痛点需求</label><div class="search-row"><input id="apps-q" type="search" name="q" maxlength="60" value="${esc(q)}" placeholder="例如 Raycast、截图、剪贴板" autocomplete="off">${category ? `<input type="hidden" name="category" value="${esc(category)}">` : ''}${theme ? `<input type="hidden" name="theme" value="${esc(theme)}">` : ''}${pricing ? `<input type="hidden" name="pricing" value="${esc(pricing)}">` : ''}${brew ? '<input type="hidden" name="brew" value="1">' : ''}${hideSystem ? '<input type="hidden" name="hide_system" value="1">' : ''}${sort !== 'top' ? `<input type="hidden" name="sort" value="${esc(sort)}">` : ''}<button type="submit" class="button primary">${glyph('search')}搜索</button></div></form>
@@ -525,9 +618,87 @@ export function appPage({ origin, umamiId, app, categories = [], reasons = [], r
     </li>`).join('')}</ul>
   </section>` : '';
 
+  const faqItems = [
+    {
+      q: `${app.name} 是什么软件？有多少 Mac 用户在用？`,
+      a: `${app.name}${app.summary ? '：' + app.summary + '。' : ' 是一款 Mac 软件。'}在「乔木软件推荐」社区中，它已被 ${app.count} 张真实用户的公开桌面海报推荐${categories.length ? `，常归类于「${categories.slice(0, 2).map(c => c.name).join(' / ')}」` : ''}。`,
+    },
+    ...(app.pricing || brewCmd ? [{
+      q: `${app.name} 免费吗？怎么在 Mac 上安装？`,
+      a: `${app.pricing ? `定价模式为「${app.pricing}」。` : ''}${brewCmd ? `支持在 macOS 终端通过 Homebrew 一键安装：${brewCmd}` : app.homepage ? `可直接访问官网下载安装：${app.homepage}` : '可通过官方渠道或 App Store 安装。'}`,
+    }] : []),
+    ...(freeAlternatives.length ? [{
+      q: `${app.name} 有哪些免费或开源平替？`,
+      a: `社区常用的免费 / 开源替代方案包括：${freeAlternatives.map(a => `${a.name}（${a.pricing || '免费'}）`).join('、')}。`,
+    }] : []),
+    ...(together.length ? [{
+      q: `使用 ${app.name} 的人通常还装了哪些 Mac 软件？`,
+      a: `和 ${app.name} 最常同时出现在同一台 Mac 桌面上的软件包括：${together.slice(0, 5).map(t => t.name).join('、')}。`,
+    }] : []),
+  ];
+
+  const isFreeApp = ['开源免费', '免费', '系统自带'].includes(app.pricing);
+  const appJsonLd = [
+    {
+      '@context': 'https://schema.org',
+      '@type': 'SoftwareApplication',
+      name: app.name,
+      operatingSystem: 'macOS',
+      applicationCategory: categories[0]?.name || 'UtilitiesApplication',
+      url: appUrl,
+      ...(app.homepage ? { sameAs: app.homepage } : {}),
+      ...(app.summary ? { description: app.summary } : {}),
+      ...(app.icon ? { image: origin + iconUrl(app.icon) } : {}),
+      ...(app.pricing ? {
+        offers: {
+          '@type': 'Offer',
+          price: isFreeApp ? '0' : undefined,
+          priceCurrency: isFreeApp ? 'USD' : undefined,
+          description: app.pricing,
+        },
+      } : {}),
+      interactionStatistic: {
+        '@type': 'InteractionCounter',
+        interactionType: 'https://schema.org/LikeAction',
+        userInteractionCount: Number(app.count) || 0,
+      },
+      ...(reasons.length ? {
+        review: reasons.slice(0, 5).map(r => ({
+          '@type': 'Review',
+          author: { '@type': 'Person', name: r.author },
+          reviewBody: r.note,
+          datePublished: new Date(r.created).toISOString().slice(0, 10),
+        })),
+      } : {}),
+    },
+    {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        { '@type': 'ListItem', position: 1, name: '首页', item: origin + '/' },
+        { '@type': 'ListItem', position: 2, name: '软件榜', item: origin + '/apps' },
+        { '@type': 'ListItem', position: 3, name: app.name, item: appUrl },
+      ],
+    },
+    {
+      '@context': 'https://schema.org',
+      '@type': 'FAQPage',
+      mainEntity: faqItems.map(item => ({
+        '@type': 'Question',
+        name: item.q,
+        acceptedAnswer: { '@type': 'Answer', text: item.a },
+      })),
+    },
+  ];
+
+  const faqSection = `<section class="app-faq" aria-labelledby="faq-title">
+    <h2 id="faq-title">快速结论与常见问题</h2>
+    <dl class="faq-list">${faqItems.map(item => `<div class="faq-item"><dt>${esc(item.q)}</dt><dd>${esc(item.a)}</dd></div>`).join('')}</dl>
+  </section>`;
+
   return frame({
     title: app.name, description, origin, umamiId, path: '/apps/' + encodeURIComponent(app.key), current: 'apps',
-    photo: '/og/apps/' + encodeURIComponent(app.key) + '.png', main: `
+    photo: '/og/apps/' + encodeURIComponent(app.key) + '.png', jsonLd: appJsonLd, main: `
 <article class="shell app-page">
   <nav class="crumbs" aria-label="返回"><a href="/apps">${glyph('back')}软件榜</a></nav>
   <header class="app-hero">
@@ -560,6 +731,7 @@ export function appPage({ origin, umamiId, app, categories = [], reasons = [], r
     <div class="section-head"><div><h2 id="posters-title">出现在这些海报里</h2></div>${posters.length >= 12 ? `<a class="text-link" href="${href('/posters', { app: app.key })}">全部${glyph('arrow')}</a>` : ''}</div>
     <div class="poster-grid">${posters.map(row => posterCard(row)).join('')}</div>
   </section>
+  ${faqSection}
   <details class="badge-box">
     <summary>${glyph('code')}给开发者的推荐徽章（可嵌入 GitHub README 或官网）</summary>
     <div class="badge-body">
@@ -581,10 +753,22 @@ export function appPage({ origin, umamiId, app, categories = [], reasons = [], r
 }
 
 export function setupPage({ origin, umamiId, packs = [], stats }) {
+  const setupJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'HowTo',
+    name: '新 Mac 5 分钟装机指南（Homebrew 自动装机脚本）',
+    description: '按场景选择社区投票最高的 Mac 软件套餐，一键生成带 Homebrew 自动检测的终端批量安装脚本或 Brewfile。',
+    totalTime: 'PT5M',
+    step: [
+      { '@type': 'HowToStep', name: '选择场景装机套餐', text: '在全站 Top 15、新 Mac 必装基础包、AI & 独立开发全家桶、写作套件或纯开源全家桶中选一套起点。' },
+      { '@type': 'HowToStep', name: '微调勾选要安装的软件', text: '根据个人需求勾选或取消软件，右侧实时同步 Homebrew Cask 批量安装命令。' },
+      { '@type': 'HowToStep', name: '粘贴到终端一键执行', text: '复制一键终端命令或下载 setup-mac.sh / Brewfile 在 macOS 终端中运行，未安装 Homebrew 会自动先安装。' },
+    ],
+  };
   return frame({
     title: '新 Mac 5 分钟装机包',
     description: '按场景挑选新 Mac 必装软件，一键生成自动安装 Homebrew 与批量 Cask 的终端脚本或 Brewfile。',
-    origin, umamiId, path: '/setup', current: 'setup', main: `
+    origin, umamiId, path: '/setup', current: 'setup', jsonLd: setupJsonLd, main: `
 <section class="shell page-head">
   <div>
     <h1>新 Mac 5 分钟装机包</h1>
@@ -690,10 +874,30 @@ export function comparePage({ origin, umamiId, sideA, sideB, overlap, topChoices
     </div>
   </section>` : '';
 
+  const validPair = Boolean(sideA && sideB);
+  const compareCanonical = validPair ? href('/compare', { a: sideA.name, b: sideB.name }) : '/compare';
+  const compareDesc = validPair
+    ? `${sideA.name}（${sideA.count} 票，${sideA.pricing || '未知定价'}）与 ${sideB.name}（${sideB.count} 票，${sideB.pricing || '未知定价'}）深度对比：真实桌面同时安装比例、Homebrew 命令与用户评价。`
+    : '并排对比任意两款 Mac 软件的真实推荐票数、定价、Homebrew 安装命令、同时安装比例与用户评价。';
+  const compareJsonLd = validPair ? {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: [
+      {
+        '@type': 'Question',
+        name: `${sideA.name} 和 ${sideB.name} 在 Mac 上选哪个更好？`,
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text: `根据「乔木软件推荐」真实 Mac 桌面海报统计：${sideA.name} 获得 ${sideA.count} 票（${sideA.pricing || '定价见官网'}），${sideB.name} 获得 ${sideB.count} 票（${sideB.pricing || '定价见官网'}）。${totalOverlap > 0 ? `在同时提及两者的 ${totalOverlap} 张海报中，只装 ${sideA.name} 占 ${overlap.only_a} 张、两款都装占 ${overlap.both} 张、只装 ${sideB.name} 占 ${overlap.only_b} 张。` : ''}`,
+        },
+      },
+    ],
+  } : null;
+
   return frame({
-    title: sideA && sideB ? `${sideA.name} vs ${sideB.name}` : '软件二选一对比',
-    description: '并排对比任意两款 Mac 软件的真实推荐票数、定价、Homebrew 安装命令、同时安装比例与用户评价。',
-    origin, umamiId, path: '/compare', current: 'apps', hidden: Boolean(sideA || sideB), main: `
+    title: validPair ? `${sideA.name} vs ${sideB.name}：Mac 软件对比` : '软件二选一对比',
+    description: compareDesc,
+    origin, umamiId, path: compareCanonical, current: 'apps', hidden: Boolean((sideA || sideB) && !validPair), jsonLd: compareJsonLd, main: `
 <section class="shell page-head">
   <div>
     <h1>${sideA && sideB ? `${esc(sideA.name)} vs ${esc(sideB.name)}` : 'Mac 软件二选一对比'}</h1>
@@ -744,8 +948,43 @@ export function sharePage({ row, similar = [], origin, umamiId }) {
     })),
   };
 
+  const shareJsonLd = isPublic ? [
+    {
+      '@context': 'https://schema.org',
+      '@type': 'CreativeWork',
+      name: row.title,
+      author: { '@type': 'Person', name: row.name },
+      datePublished: new Date(row.created).toISOString(),
+      image: origin + image(row.id),
+      url: origin + '/s/' + row.id,
+      description,
+      inLanguage: 'zh-CN',
+    },
+    {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        { '@type': 'ListItem', position: 1, name: '首页', item: origin + '/' },
+        { '@type': 'ListItem', position: 2, name: '全部海报', item: origin + '/posters' },
+        { '@type': 'ListItem', position: 3, name: row.title, item: origin + '/s/' + row.id },
+      ],
+    },
+    {
+      '@context': 'https://schema.org',
+      '@type': 'ItemList',
+      name: `${row.name}推荐的 Mac 软件清单`,
+      numberOfItems: row.items.length,
+      itemListElement: row.items.slice(0, 30).map((a, idx) => ({
+        '@type': 'ListItem',
+        position: idx + 1,
+        name: a.name,
+        url: origin + appHref(a.key),
+      })),
+    },
+  ] : null;
+
   return frame({
-    title: row.title, description, origin, umamiId, path: '/s/' + row.id, photo: image(row.id), hidden: !isPublic,
+    title: row.title, description, origin, umamiId, path: '/s/' + row.id, photo: image(row.id), hidden: !isPublic, current: 'posters', jsonLd: shareJsonLd,
     main: `<article class="share">
   <div class="shell">
     <nav class="crumbs" aria-label="返回"><a href="/posters">${glyph('back')}全部海报</a></nav>
@@ -853,10 +1092,22 @@ export function studioPage({ origin, umamiId, catalogApps = [], wallpapers = [],
     isSystem: Boolean(a.is_system),
   }));
 
+  const studioJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'WebApplication',
+    name: '乔木 Mac 软件海报在线制作台',
+    url: origin + '/studio',
+    applicationCategory: 'DesignApplication',
+    operatingSystem: 'All',
+    inLanguage: 'zh-CN',
+    offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+    description: '免费在线制作高清 Mac 软件推荐海报，内置 200+ 真实软件与 AI Harness 图标、20 张高清壁纸、霞鹜文楷/思源宋体等开源字体与 16:9 / 3:4 双画幅导出。',
+  };
+
   return frame({
     title: '在线制作你的 Mac 软件推荐海报',
     description: '选软件、换壁纸、填署名，30 秒在线生成高清 Mac 软件推荐海报，内置 200+ 真实图标（全面覆盖热门 AI Harness 与 AI 工具）与 20 张精选壁纸。',
-    origin, umamiId, path: '/studio', current: 'studio', extraScript: studioAsset, main: `
+    origin, umamiId, path: '/studio', current: 'studio', extraScript: studioAsset, jsonLd: studioJsonLd, main: `
 <section class="shell studio-v3" id="studio-root">
   <header class="studio-top">
     <div class="studio-top-left">
