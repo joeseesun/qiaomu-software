@@ -761,10 +761,11 @@ export function sharePage({ row, similar = [], origin, umamiId }) {
     </figure>
     <div class="actions share-actions">
       <a class="button primary" href="${image(esc(row.id))}" download="${esc(downloadName)}">${glyph('download')}下载海报</a>
-      <button type="button" class="button secondary" data-copy-url>${glyph('link')}复制分享链接</button>
-      <button type="button" class="button secondary" data-copy-list>${glyph('list')}复制文字清单</button>
-      <button type="button" class="button secondary" data-kit-batch>${glyph('box')}整张加入装机清单</button>
-      <a class="button secondary" href="/studio">${glyph('plus')}我也做一张</a>
+      <button type="button" class="button secondary" data-copy-poster-img="${image(esc(row.id))}">${glyph('copy')}复制图片</button>
+      <button type="button" class="button secondary" data-copy-url>${glyph('link')}复制链接</button>
+      <button type="button" class="button secondary" data-copy-list>${glyph('list')}复制清单</button>
+      <button type="button" class="button secondary" data-kit-batch>${glyph('box')}加入装机清单</button>
+      <button type="button" class="button secondary" data-remix-poster>${glyph('sparkles')}复刻同款做一张</button>
       <a class="button secondary" id="studio-edit-link" data-share-owner-id="${esc(row.id)}" href="/studio?edit=${esc(row.id)}" hidden>${glyph('edit')}编辑 / 更新海报</a>
     </div>
     <script type="application/json" id="share-manifest">${safeJsonScript(manifest)}</script>
@@ -873,12 +874,16 @@ export function studioPage({ origin, umamiId, catalogApps = [], wallpapers = [],
     <div class="studio-dock">
       <div class="studio-dock-tools">
         <button type="button" class="button secondary" id="open-apps-modal">${glyph('box')}选软件 <span class="dock-pill num" id="studio-app-count">0</span></button>
-        <button type="button" class="button secondary" id="open-bg-modal">${glyph('upload')}换壁纸 <span class="dock-meta" id="studio-bg-label">${esc(wallpapers[0]?.name ?? '默认')}</span></button>
+        <div class="dock-split-btn">
+          <button type="button" class="button secondary" id="open-bg-modal">${glyph('upload')}换壁纸 <span class="dock-meta" id="studio-bg-label">${esc(wallpapers[0]?.name ?? '默认')}</span></button>
+          <button type="button" class="button secondary dock-icon-btn" id="studio-dock-shuffle" aria-label="随机换一张壁纸" title="随机换一张壁纸">${glyph('shuffle')}</button>
+        </div>
         <button type="button" class="button secondary" id="open-style-modal">${glyph('edit')}字体与水印</button>
       </div>
       <div class="studio-dock-finish">
         <label class="sr" for="studio-name">你的名字（署名）</label>
         <input type="text" id="studio-name" maxlength="40" placeholder="输入你的名字">
+        <button type="button" class="button secondary" id="studio-copy-img" title="复制高清图片到剪贴板，可直接 ⌘V 粘贴">${glyph('copy')}复制图</button>
         <button type="button" class="button secondary" id="studio-download">${glyph('download')}下载</button>
         <button type="button" class="button primary" id="studio-publish">${glyph('sparkles')}发布海报</button>
       </div>
@@ -900,6 +905,8 @@ export function studioPage({ origin, umamiId, catalogApps = [], wallpapers = [],
       </div>
       <div class="actions">
         <button type="button" class="button secondary small" id="studio-pick-hot">热门 12 款</button>
+        <button type="button" class="button secondary small" id="studio-pick-ai">AI Harness 栈</button>
+        <button type="button" class="button secondary small" id="studio-pick-foss">开源效率栈</button>
         <button type="button" class="button secondary small" id="studio-clear-apps">清空</button>
         <form method="dialog"><button type="submit" class="button primary small">完成</button></form>
       </div>
@@ -971,6 +978,13 @@ export function studioPage({ origin, umamiId, catalogApps = [], wallpapers = [],
       <form method="dialog"><button type="submit" class="button primary small">完成</button></form>
     </div>
     <div class="style-modal-body">
+      <div class="style-group">
+        <p class="style-label">海报画幅比例</p>
+        <div class="font-grid" role="group" aria-label="选择海报画幅">
+          <button type="button" class="font-card is-active" data-aspect="wide" aria-pressed="true"><strong>16:9 横版</strong><span>桌面壁纸 · X / 公众号 / 博客</span></button>
+          <button type="button" class="font-card" data-aspect="portrait" aria-pressed="false"><strong>3:4 竖版</strong><span>小红书 · 朋友圈 · 即刻卡片</span></button>
+        </div>
+      </div>
       <div class="style-group">
         <p class="style-label">海报开源字体</p>
         <div class="font-grid" role="group" aria-label="选择海报字体">

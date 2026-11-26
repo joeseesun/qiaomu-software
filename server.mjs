@@ -1503,20 +1503,45 @@ export function createSoftwareServer({
       } catch { throw new RequestError(404, '找不到这个文件。'); }
     }
 
-    // Instant search autocomplete (matches name, alias, summary, and Chinese pain-point keywords!)
+    // Instant search autocomplete (matches submitted apps + curated AI/Mac apps by name, alias, summary & pain-point keywords!)
     if (read && pathname === '/api/v1/suggest') {
       const q = search('q', 60);
       const hits = apps({ q, limit: q ? 8 : 6 }).map(a => ({
         key: a.key,
         name: a.name,
         count: a.count,
-        icon: a.icon ? '/icons/' + a.icon + '.webp' : null,
-        iconHash: a.icon ?? null,
+        icon: a.icon ? '/icons/' + a.icon + '.webp' : (presetIconsMap[a.key] ? '/icons/' + presetIconsMap[a.key] + '.webp' : null),
+        iconHash: a.icon ?? presetIconsMap[a.key] ?? null,
         category: a.categories?.[0] ?? '',
         pricing: a.pricing ?? '',
         summary: a.summary ?? '',
         cask: a.cask ?? '',
       }));
+      if (q && hits.length < 8) {
+        const ql = q.toLowerCase();
+        const seen = new Set(hits.map(h => h.key));
+        for (const b of BUILTIN_APPS) {
+          if (b.system || hits.length >= 8) continue;
+          const k = normalizeAppKey(b.name);
+          if (seen.has(k)) continue;
+          const hay = [k, b.name, ...(b.aliases ?? []), b.keywords ?? '', b.summary ?? ''].join(' ').toLowerCase();
+          if (!hay.includes(ql)) continue;
+          seen.add(k);
+          const iconHash = presetIconsMap[k] ?? null;
+          hits.push({
+            key: k,
+            name: b.name,
+            count: 0,
+            studioOnly: true,
+            icon: iconHash ? '/icons/' + iconHash + '.webp' : null,
+            iconHash,
+            category: '',
+            pricing: b.pricing ?? '',
+            summary: b.summary ?? '',
+            cask: b.cask ?? '',
+          });
+        }
+      }
       const catHits = q ? suggestCategories.all(q) : [];
       return publicJson(res, 200, { apps: hits, categories: catHits });
     }

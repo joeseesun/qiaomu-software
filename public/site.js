@@ -70,16 +70,70 @@ for (const button of document.querySelectorAll('button[data-copy-list]')) {
   });
 }
 
-// `/` focuses search input
+// Copy poster image to clipboard on /s/:id
+for (const button of document.querySelectorAll('button[data-copy-poster-img]')) {
+  button.addEventListener('click', async () => {
+    const src = button.dataset.copyPosterImg;
+    try {
+      if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') throw Error('unsupported');
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+        img.src = src;
+      });
+      const c = document.createElement('canvas');
+      c.width = img.naturalWidth;
+      c.height = img.naturalHeight;
+      c.getContext('2d').drawImage(img, 0, 0);
+      const blob = await new Promise(resolve => c.toBlob(resolve, 'image/png'));
+      if (!blob) throw Error('blob');
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      window.qiaomuToast?.('海报图片已复制，可直接 ⌘V 粘贴');
+    } catch {
+      window.qiaomuToast?.('当前浏览器不支持复制图片，请点「下载海报」');
+    }
+  });
+}
+
+// Remix poster into /studio on /s/:id
+for (const button of document.querySelectorAll('button[data-remix-poster]')) {
+  button.addEventListener('click', () => {
+    const manifestEl = document.getElementById('share-manifest');
+    if (!manifestEl) { location.href = '/studio'; return; }
+    try {
+      const data = JSON.parse(manifestEl.textContent);
+      const carried = (data.apps || []).map(a => ({
+        name: a.name,
+        key: a.key || a.name.toLowerCase(),
+        group: a.group || '效率与工具',
+        note: a.note || '',
+        icon: a.icon || '',
+      }));
+      sessionStorage.setItem('qiaomu_taste_carry_v1', JSON.stringify(carried));
+    } catch {}
+    location.href = '/studio';
+  });
+}
+
+// `/` or `⌘K` / `Ctrl+K` focuses search input
 const headerSearch = document.getElementById('header-q');
+const headerKbd = document.querySelector('.header-search kbd');
+if (headerKbd && /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent)) {
+  headerKbd.textContent = '⌘K';
+}
 document.addEventListener('keydown', event => {
-  if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey || !headerSearch) return;
+  if (!headerSearch) return;
+  const isCmdK = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k';
+  const isSlash = event.key === '/' && !event.metaKey && !event.ctrlKey && !event.altKey;
+  if (!isCmdK && !isSlash) return;
   const target = event.target;
-  if (target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+  if (isSlash && target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
   if (document.querySelector('dialog[open]')) return;
   event.preventDefault();
   const pageSearch = document.querySelector('main input[type="search"]');
-  const field = pageSearch && pageSearch.offsetParent !== null ? pageSearch : headerSearch;
+  const field = (!isCmdK && pageSearch && pageSearch.offsetParent !== null) ? pageSearch : headerSearch;
   field.focus();
   field.select();
 });
@@ -118,7 +172,9 @@ if (headerSearch) {
         const a = document.createElement('a');
         a.className = 'suggest-item';
         a.role = 'option';
-        a.href = '/apps/' + encodeURIComponent(app.key);
+        a.href = app.studioOnly
+          ? '/studio?add=' + encodeURIComponent(app.key)
+          : '/apps/' + encodeURIComponent(app.key);
         if (app.icon) {
           const img = document.createElement('img');
           img.src = app.icon;
@@ -141,7 +197,7 @@ if (headerSearch) {
         }
         const meta = document.createElement('span');
         meta.className = 'suggest-item-meta num';
-        meta.textContent = `${app.count} 票`;
+        meta.textContent = app.studioOnly ? '加入海报 →' : `${app.count} 票`;
         a.append(wrap, meta);
         menu.append(a);
         items.push(a);

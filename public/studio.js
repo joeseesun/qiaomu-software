@@ -8,6 +8,7 @@
 
   const OWNED_KEY = 'qiaomu_studio_posters_v1';
   const TASTE_CARRY_KEY = 'qiaomu_taste_carry_v1';
+  const DRAFT_KEY = 'qiaomu_studio_draft_v1';
 
   const canvas = document.getElementById('studio-canvas');
   const ctx = canvas.getContext('2d');
@@ -25,6 +26,7 @@
   const watermarkShow = document.getElementById('studio-watermark-show');
   const publishBtn = document.getElementById('studio-publish');
   const downloadBtn = document.getElementById('studio-download');
+  const copyImgBtn = document.getElementById('studio-copy-img');
   const statusEl = document.getElementById('studio-status');
   const appSearch = document.getElementById('studio-app-search');
   const defaultCatSelect = document.getElementById('studio-default-cat');
@@ -35,8 +37,11 @@
   const historyCard = document.getElementById('studio-history-card');
   const historyList = document.getElementById('studio-history');
   const pickHotBtn = document.getElementById('studio-pick-hot');
+  const pickAiBtn = document.getElementById('studio-pick-ai');
+  const pickFossBtn = document.getElementById('studio-pick-foss');
   const clearAppsBtn = document.getElementById('studio-clear-apps');
   const randomBgBtn = document.getElementById('studio-random-bg');
+  const dockShuffleBtn = document.getElementById('studio-dock-shuffle');
   const pasteInput = document.getElementById('studio-paste-input');
   const pasteBtn = document.getElementById('studio-paste-btn');
 
@@ -88,6 +93,7 @@
   };
 
   let activeFont = 'wenkai';
+  let activeAspect = 'wide';
   let activeScrim = 'desktop';
   let bgImage = null;
   let activeWallpaperUrl = wallpapers[0]?.url || '';
@@ -97,6 +103,29 @@
   const iconImages = new Map();
   const wallpaperCache = new Map();
   const loadedStylesheets = new Set();
+
+  function saveDraft() {
+    if (editing) return;
+    try {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({
+        apps: selectedApps.map(a => ({ name: a.name, key: a.key, group: a.group, note: a.note || '', icon: a.icon || '' })),
+        wallpaperUrl: activeWallpaperUrl,
+        scrim: activeScrim,
+        font: activeFont,
+        aspect: activeAspect,
+        name: nameInput?.value || '',
+        title: titleInput?.value || '',
+        role: roleInput?.value || '',
+        watermark: watermarkInput?.value ?? 'software.qiaomu.ai',
+        watermarkShow: watermarkShow ? watermarkShow.checked : true,
+      }));
+    } catch {}
+  }
+
+  function loadDraft() {
+    try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); }
+    catch { return null; }
+  }
 
   function defaultTitleFor(author) {
     const year = new Date().getFullYear();
@@ -218,7 +247,7 @@
     return { text: out, size };
   }
 
-  function groupIntoRows(apps) {
+  function groupIntoRows(apps, maxPerRow = 10) {
     const groups = new Map();
     for (const app of apps) {
       const label = app.group || '效率与工具';
@@ -227,8 +256,8 @@
     }
     const rows = [];
     for (const [label, list] of groups) {
-      for (let i = 0; i < list.length; i += 10) {
-        rows.push({ label: i === 0 ? label : '', apps: list.slice(i, i + 10) });
+      for (let i = 0; i < list.length; i += maxPerRow) {
+        rows.push({ label: i === 0 ? label : '', apps: list.slice(i, i + maxPerRow) });
       }
     }
     return rows;
@@ -238,7 +267,9 @@
 
   async function renderPoster() {
     const seq = ++renderSeq;
-    const rows = groupIntoRows(selectedApps);
+    const isPortrait = activeAspect === 'portrait';
+    root.classList.toggle('is-portrait', isPortrait);
+    const rows = groupIntoRows(selectedApps, isPortrait ? 4 : 10);
     const rawTitle = resolveTitle();
     if (titleInput) titleInput.placeholder = defaultTitleFor(nameInput?.value);
     const sampleText = rawTitle + rows.map(r => r.label).join('');
@@ -250,10 +281,18 @@
     ]);
     if (seq !== renderSeq) return;
 
-    const W = 1600;
-    const rowHeight = rows.length <= 5 ? Math.min(146, Math.floor(650 / Math.max(1, rows.length))) : 118;
-    const footerH = 46;
-    const H = Math.max(900, 214 + footerH + rows.length * rowHeight);
+    const W = isPortrait ? 1200 : 1600;
+    const footerH = isPortrait ? 64 : 46;
+    let H, rowHeight;
+    if (isPortrait) {
+      const topPad = 210;
+      const groupHeaders = rows.filter(r => r.label).length;
+      rowHeight = rows.length <= 5 ? 196 : 164;
+      H = Math.max(1600, topPad + footerH + rows.length * rowHeight + groupHeaders * 42);
+    } else {
+      rowHeight = rows.length <= 5 ? Math.min(146, Math.floor(650 / Math.max(1, rows.length))) : 118;
+      H = Math.max(900, 214 + footerH + rows.length * rowHeight);
+    }
     if (canvas.width !== W || canvas.height !== H) {
       canvas.width = W;
       canvas.height = H;
@@ -275,9 +314,9 @@
       ctx.fillRect(0, 0, W, H);
 
       const topGrad = ctx.createLinearGradient(0, 0, 0, H);
-      topGrad.addColorStop(0, 'rgba(8, 13, 20, 0.48)');
-      topGrad.addColorStop(0.35, 'rgba(8, 13, 20, 0.12)');
-      topGrad.addColorStop(1, 'rgba(8, 13, 20, 0.44)');
+      topGrad.addColorStop(0, 'rgba(8, 13, 20, 0.52)');
+      topGrad.addColorStop(0.32, 'rgba(8, 13, 20, 0.14)');
+      topGrad.addColorStop(1, 'rgba(8, 13, 20, 0.48)');
       ctx.fillStyle = topGrad;
       ctx.fillRect(0, 0, W, H);
     }
@@ -300,10 +339,11 @@
       ctx.restore();
     };
 
-    const headingBase = activeFont === 'smiley' ? 76 : 68;
-    const fittedHeading = fitText(rawTitle, fp.heading, headingBase, 40, W - 128);
+    const marginX = isPortrait ? 72 : 64;
+    const headingBase = isPortrait ? (activeFont === 'smiley' ? 74 : 66) : (activeFont === 'smiley' ? 76 : 68);
+    const fittedHeading = fitText(rawTitle, fp.heading, headingBase, 38, W - marginX * 2);
     ctx.font = fp.heading(fittedHeading.size);
-    drawShadowText(fittedHeading.text, 64, 132, 'left', white);
+    drawShadowText(fittedHeading.text, marginX, isPortrait ? 136 : 132, 'left', white);
 
     // Bottom-left signature
     const author = nameInput.value.trim();
@@ -311,22 +351,61 @@
     if (author) {
       const sep = /[A-Za-z0-9]$/.test(author) ? ' ' : '';
       const footerLeft = `${author}${sep}的推荐${role ? ' · ' + role : ''}`;
-      ctx.font = uiFont(20, 500);
-      drawShadowText(footerLeft, 64, H - 30, 'left', quiet);
+      ctx.font = uiFont(isPortrait ? 24 : 20, 500);
+      drawShadowText(footerLeft, marginX, H - (isPortrait ? 40 : 30), 'left', quiet);
     }
 
     // Bottom-right watermark (customizable or hidden!)
     if (watermarkShow?.checked) {
       const wmText = (watermarkInput?.value ?? 'software.qiaomu.ai').trim();
       if (wmText) {
-        ctx.font = uiFont(19, 500);
-        drawShadowText(wmText, W - 64, H - 30, 'right', quiet);
+        ctx.font = uiFont(isPortrait ? 22 : 19, 500);
+        drawShadowText(wmText, W - marginX, H - (isPortrait ? 40 : 30), 'right', quiet);
       }
     }
 
     if (!rows.length) {
       ctx.font = uiFont(28, 500);
       drawShadowText('点击下方「选软件」挑几款你常用的 Mac 应用', W / 2, H / 2 + 12, 'center', 'rgba(255,251,244,0.84)');
+      saveDraft();
+      return;
+    }
+
+    if (isPortrait) {
+      let curY = 212;
+      const cols = 4;
+      const step = (W - marginX * 2) / cols;
+      const iconSize = Math.min(114, Math.round(rowHeight * 0.58));
+      rows.forEach((row) => {
+        if (row.label) {
+          const labelBase = activeFont === 'smiley' ? 38 : 34;
+          const fittedLabel = fitText(row.label, fp.label, labelBase, 22, W - marginX * 2);
+          ctx.font = fp.label(fittedLabel.size);
+          drawShadowText(fittedLabel.text, marginX, curY + 26, 'left', 'rgba(255,251,244,0.92)');
+          curY += 46;
+        }
+        row.apps.forEach((app, colIdx) => {
+          const cx = marginX + step * (colIdx + 0.5);
+          const ix = cx - iconSize / 2;
+          const iy = curY;
+          const img = app.icon ? iconImages.get(app.icon) : null;
+          if (img) {
+            ctx.save();
+            ctx.shadowColor = 'rgba(0,0,0,0.44)';
+            ctx.shadowBlur = 16;
+            ctx.shadowOffsetY = 6;
+            ctx.drawImage(img, ix, iy, iconSize, iconSize);
+            ctx.restore();
+          } else {
+            drawFallbackTile(ix, iy, iconSize, app.name);
+          }
+          const fittedName = fitText(app.name, (sz) => uiFont(sz, 600), 22, 15, step - 14);
+          ctx.font = uiFont(fittedName.size, 600);
+          drawShadowText(fittedName.text, cx, iy + iconSize + 30, 'center', white);
+        });
+        curY += rowHeight;
+      });
+      saveDraft();
       return;
     }
 
@@ -365,6 +444,7 @@
         drawShadowText(fittedName.text, cx, iy + iconSize + 26, 'center', white);
       });
     });
+    saveDraft();
   }
 
   function syncCatalogHighlights() {
@@ -526,11 +606,31 @@
   addCustomBtn?.addEventListener('click', addCustomFromInput);
   appSearch?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addCustomFromInput(); } });
 
-  pickHotBtn?.addEventListener('click', () => {
-    for (const a of catalog.filter(x => !x.isSystem).slice(0, 12)) addApp(a);
+  const applyPresetStack = (keys, label) => {
+    selectedApps.length = 0;
+    for (const k of keys) {
+      const found = catalogByKey.get(k);
+      if (found) addApp(found);
+    }
     syncCatalogHighlights();
     renderPoster();
+    window.qiaomuToast?.(`已套用「${label}」(${selectedApps.length} 款)`);
+  };
+  pickHotBtn?.addEventListener('click', () => {
+    selectedApps.length = 0;
+    for (const a of catalog.filter(x => !x.isSystem && x.icon).slice(0, 12)) addApp(a);
+    syncCatalogHighlights();
+    renderPoster();
+    window.qiaomuToast?.('已套用「热门 12 款」');
   });
+  pickAiBtn?.addEventListener('click', () => applyPresetStack(
+    ['paseo', 'claude code', 'codex', 'opencode', 'openclaw', 'conductor', 'antigravity', 'cursor', 'ollama', 'lm studio', 'wispr flow', 'obsidian'],
+    'AI Harness 栈'
+  ));
+  pickFossBtn?.addEventListener('click', () => applyPresetStack(
+    ['zed', 'ghostty', 'opencode', 'ollama', 'cherry studio', 'obsidian', 'rectangle', 'ice', 'maccy', 'stats', 'easydict', 'iina'],
+    '开源效率栈'
+  ));
   clearAppsBtn?.addEventListener('click', () => {
     selectedApps.length = 0;
     syncCatalogHighlights();
@@ -538,6 +638,12 @@
   });
 
   // Wallpaper & scrim controls
+  const shuffleWallpaper = () => {
+    if (!wallpapers.length) return;
+    const pool = wallpapers.filter(w => w.url !== activeWallpaperUrl);
+    const next = pool[Math.floor(Math.random() * pool.length)] || wallpapers[0];
+    selectWallpaper(next.url, next.name);
+  };
   for (const btn of document.querySelectorAll('[data-wallpaper-url]')) {
     btn.addEventListener('click', () => selectWallpaper(btn.dataset.wallpaperUrl, btn.dataset.wallpaperName, btn));
   }
@@ -548,12 +654,8 @@
       renderPoster();
     });
   }
-  randomBgBtn?.addEventListener('click', () => {
-    if (!wallpapers.length) return;
-    const pool = wallpapers.filter(w => w.url !== activeWallpaperUrl);
-    const next = pool[Math.floor(Math.random() * pool.length)] || wallpapers[0];
-    selectWallpaper(next.url, next.name);
-  });
+  randomBgBtn?.addEventListener('click', shuffleWallpaper);
+  dockShuffleBtn?.addEventListener('click', shuffleWallpaper);
   bgFileInput?.addEventListener('change', async () => {
     const file = bgFileInput.files?.[0];
     if (!file) return;
@@ -571,7 +673,19 @@
     }
   });
 
-  // Font & watermark controls
+  // Aspect ratio & Font & watermark controls
+  for (const btn of document.querySelectorAll('[data-aspect]')) {
+    btn.addEventListener('click', async () => {
+      activeAspect = btn.dataset.aspect;
+      for (const other of document.querySelectorAll('[data-aspect]')) {
+        const on = other === btn;
+        other.classList.toggle('is-active', on);
+        other.setAttribute('aria-pressed', on ? 'true' : 'false');
+      }
+      await renderPoster();
+      window.qiaomuToast?.(`已切换为「${btn.querySelector('strong')?.textContent || '新画幅'}」`);
+    });
+  }
   for (const btn of document.querySelectorAll('[data-font]')) {
     btn.addEventListener('click', async () => {
       activeFont = btn.dataset.font;
@@ -681,6 +795,20 @@
     } catch (err) { statusEl.textContent = err.message; }
   }
 
+  copyImgBtn?.addEventListener('click', async () => {
+    if (!selectedApps.length) { appsModal?.showModal(); return; }
+    await renderPoster();
+    try {
+      if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') throw Error('unsupported');
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+      if (!blob) throw Error('blob');
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      window.qiaomuToast?.('海报图片已复制，可直接 ⌘V 粘贴');
+    } catch {
+      window.qiaomuToast?.('当前浏览器不支持复制图片，请点「下载」保存');
+    }
+  });
+
   downloadBtn?.addEventListener('click', async () => {
     if (!selectedApps.length) { appsModal?.showModal(); return; }
     await renderPoster();
@@ -742,7 +870,9 @@
 
   // Init
   renderHistory();
-  const editId = new URLSearchParams(location.search).get('edit');
+  const params = new URLSearchParams(location.search);
+  const editId = params.get('edit');
+  const addParam = (params.get('add') || '').trim().toLowerCase();
   if (editId) {
     const found = loadOwned().find(x => x.id === editId);
     if (found) loadForEdit(found.id, found.token);
@@ -754,10 +884,63 @@
         sessionStorage.removeItem(TASTE_CARRY_KEY);
         for (const a of carried) addApp(a);
         loaded = true;
+        window.qiaomuToast?.(`已载入 ${selectedApps.length} 款软件，换壁纸或填署名即可出图`);
       }
     } catch {}
+    if (!loaded) {
+      const draft = loadDraft();
+      if (draft && Array.isArray(draft.apps) && draft.apps.length) {
+        for (const a of draft.apps) addApp(a);
+        if (draft.wallpaperUrl && wallpapers.some(w => w.url === draft.wallpaperUrl)) {
+          activeWallpaperUrl = draft.wallpaperUrl;
+          const wp = wallpapers.find(w => w.url === draft.wallpaperUrl);
+          if (bgLabelEl && wp) bgLabelEl.textContent = wp.name;
+          for (const other of document.querySelectorAll('[data-wallpaper-url]')) {
+            const on = other.dataset.wallpaperUrl === activeWallpaperUrl;
+            other.classList.toggle('is-active', on);
+            other.setAttribute('aria-pressed', on ? 'true' : 'false');
+          }
+        }
+        if (draft.scrim === 'night' || draft.scrim === 'desktop') {
+          activeScrim = draft.scrim;
+          for (const other of document.querySelectorAll('[data-scrim]')) other.classList.toggle('is-on', other.dataset.scrim === activeScrim);
+        }
+        if (draft.font && FONT_PRESETS[draft.font]) {
+          activeFont = draft.font;
+          for (const other of document.querySelectorAll('[data-font]')) {
+            const on = other.dataset.font === activeFont;
+            other.classList.toggle('is-active', on);
+            other.setAttribute('aria-pressed', on ? 'true' : 'false');
+          }
+        }
+        if (draft.aspect === 'portrait' || draft.aspect === 'wide') {
+          activeAspect = draft.aspect;
+          for (const other of document.querySelectorAll('[data-aspect]')) {
+            const on = other.dataset.aspect === activeAspect;
+            other.classList.toggle('is-active', on);
+            other.setAttribute('aria-pressed', on ? 'true' : 'false');
+          }
+        }
+        if (nameInput && draft.name) nameInput.value = draft.name;
+        if (titleInput && draft.title) titleInput.value = draft.title;
+        if (roleInput && draft.role) roleInput.value = draft.role;
+        if (watermarkInput && typeof draft.watermark === 'string') watermarkInput.value = draft.watermark;
+        if (watermarkShow && typeof draft.watermarkShow === 'boolean') {
+          watermarkShow.checked = draft.watermarkShow;
+          if (watermarkInput) watermarkInput.disabled = !draft.watermarkShow;
+        }
+        loaded = true;
+      }
+    }
     if (!loaded && catalog.length) {
       for (const a of catalog.filter(x => !x.isSystem && x.icon).slice(0, 6)) addApp(a);
+    }
+    if (addParam) {
+      const target = catalogByKey.get(addParam);
+      if (target) {
+        addApp(target);
+        window.qiaomuToast?.(`已将「${target.name}」加入你的海报`);
+      }
     }
   }
   syncCatalogHighlights();
