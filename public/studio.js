@@ -32,6 +32,7 @@
   const defaultCatSelect = document.getElementById('studio-default-cat');
   const addCustomBtn = document.getElementById('studio-add-custom');
   const selectedListEl = document.getElementById('studio-selected-list');
+  const selectedStripEl = document.getElementById('studio-selected-strip');
   const appCountEl = document.getElementById('studio-app-count');
   const modalAppCountEl = document.getElementById('modal-app-count');
   const historyCard = document.getElementById('studio-history-card');
@@ -468,7 +469,41 @@
       btn.setAttribute('aria-pressed', on ? 'true' : 'false');
     }
     if (activeThemeFilter === '__selected') filterCatalogGrid();
+    renderSelectedStrip();
     renderSelectedEditor();
+  }
+
+  function renderSelectedStrip() {
+    if (!selectedStripEl) return;
+    selectedStripEl.replaceChildren();
+    selectedStripEl.hidden = selectedApps.length === 0;
+    selectedApps.forEach((app, idx) => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'studio-sel-chip';
+      chip.title = `点击移除 ${app.name}`;
+      if (app.icon) {
+        const img = document.createElement('img');
+        img.src = '/icons/' + app.icon + '.webp';
+        img.width = 16;
+        img.height = 16;
+        img.alt = '';
+        chip.append(img);
+      }
+      const txt = document.createElement('span');
+      txt.textContent = app.name;
+      const x = document.createElement('span');
+      x.className = 'studio-sel-x';
+      x.setAttribute('aria-hidden', 'true');
+      x.textContent = '×';
+      chip.append(txt, x);
+      chip.addEventListener('click', () => {
+        selectedApps.splice(idx, 1);
+        syncCatalogHighlights();
+        renderPoster();
+      });
+      selectedStripEl.append(chip);
+    });
   }
 
   function renderSelectedEditor() {
@@ -666,6 +701,20 @@
   }
   randomBgBtn?.addEventListener('click', shuffleWallpaper);
   dockShuffleBtn?.addEventListener('click', shuffleWallpaper);
+
+  // Power keyboard shortcuts on /studio: `R` shuffles wallpaper, `⌘S` downloads PNG
+  document.addEventListener('keydown', (e) => {
+    if (document.querySelector('dialog[open]')) return;
+    const t = e.target;
+    const inField = t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+      e.preventDefault();
+      downloadBtn?.click();
+    } else if (!inField && !e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'r') {
+      e.preventDefault();
+      shuffleWallpaper();
+    }
+  });
   bgFileInput?.addEventListener('change', async () => {
     const file = bgFileInput.files?.[0];
     if (!file) return;

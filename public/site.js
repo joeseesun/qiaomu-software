@@ -117,23 +117,171 @@ for (const button of document.querySelectorAll('button[data-remix-poster]')) {
   });
 }
 
-// `/` or `⌘K` / `Ctrl+K` focuses search input
+// Raycast-style `⌘K` / `Ctrl+K` Command Palette + `/` focuses search
 const headerSearch = document.getElementById('header-q');
 const headerKbd = document.querySelector('.header-search kbd');
+const cmdkDialog = document.getElementById('cmdk-dialog');
+const cmdkInput = document.getElementById('cmdk-input');
+const cmdkResults = document.getElementById('cmdk-results');
+
 if (headerKbd && /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent)) {
   headerKbd.textContent = '⌘K';
 }
+
+const CMDK_QUICK_ACTIONS = [
+  { label: '制作我的 Mac 软件海报', sub: '200+ 真实图标 · 20 张壁纸 · 16:9 / 3:4 双画幅', href: '/studio', badge: '制作台' },
+  { label: 'AI Harness & Agent 工具精选', sub: 'Paseo、Claude Code、Codex、OpenCode、OpenClaw、Conductor', href: '/apps?theme=harness', badge: '热门' },
+  { label: '新 Mac 5 分钟装机包', sub: '按场景选软件，一键生成 Homebrew 装机脚本', href: '/setup', badge: '装机' },
+  { label: 'Mac 软件体检 & 查漏补缺', sub: '粘贴本机应用列表，找出同频高手都在用的神器', href: '/taste', badge: '体检' },
+  { label: '同类软件二选一对比', sub: 'Paseo vs Conductor · Ollama vs LM Studio · Raycast vs Alfred', href: '/compare', badge: '对比' },
+  { label: '开源免费 Mac 软件精选', sub: '零订阅压力，全站开源免费效率工具合集', href: '/apps?pricing=foss', badge: '开源' },
+  { label: '随机逛逛一款宝藏软件', sub: '发现站内有真实走心评价的软件', href: '/random', badge: '漫游' },
+];
+
+let openCmdk = () => {};
+if (cmdkDialog && cmdkInput && cmdkResults) {
+  let cmdkTimer = null;
+  let cmdkItems = [];
+  let cmdkIdx = 0;
+
+  const setCmdkActive = (idx) => {
+    cmdkItems.forEach((el, i) => el.classList.toggle('is-active', i === idx));
+    cmdkIdx = idx;
+    cmdkItems[idx]?.scrollIntoView({ block: 'nearest' });
+  };
+
+  const renderCmdkList = (groups) => {
+    cmdkResults.replaceChildren();
+    cmdkItems = [];
+    for (const group of groups) {
+      if (!group.items.length) continue;
+      const g = document.createElement('div');
+      g.className = 'cmdk-group';
+      g.textContent = group.title;
+      cmdkResults.append(g);
+      for (const item of group.items) {
+        const a = document.createElement('a');
+        a.className = 'cmdk-item';
+        a.role = 'option';
+        a.href = item.href;
+        if (item.icon) {
+          const img = document.createElement('img');
+          img.src = item.icon;
+          img.width = 24;
+          img.height = 24;
+          img.alt = '';
+          a.append(img);
+        }
+        const wrap = document.createElement('span');
+        wrap.className = 'cmdk-item-wrap';
+        const name = document.createElement('span');
+        name.className = 'cmdk-item-name';
+        name.textContent = item.label;
+        wrap.append(name);
+        if (item.sub) {
+          const sub = document.createElement('span');
+          sub.className = 'cmdk-item-sub';
+          sub.textContent = item.sub;
+          wrap.append(sub);
+        }
+        const meta = document.createElement('span');
+        meta.className = 'cmdk-item-meta num';
+        meta.textContent = item.badge || '';
+        a.append(wrap, meta);
+        a.addEventListener('mouseenter', () => {
+          const i = cmdkItems.indexOf(a);
+          if (i >= 0) setCmdkActive(i);
+        });
+        cmdkResults.append(a);
+        cmdkItems.push(a);
+      }
+    }
+    if (!cmdkItems.length) {
+      const empty = document.createElement('p');
+      empty.className = 'cmdk-empty';
+      empty.textContent = '没有找到匹配项，按回车前往完整软件榜搜索';
+      cmdkResults.append(empty);
+    } else {
+      setCmdkActive(0);
+    }
+  };
+
+  const queryCmdk = async () => {
+    const q = cmdkInput.value.trim();
+    if (!q) {
+      renderCmdkList([{ title: '快捷入口', items: CMDK_QUICK_ACTIONS }]);
+      return;
+    }
+    try {
+      const res = await fetch('/api/v1/suggest?q=' + encodeURIComponent(q));
+      if (!res.ok) return;
+      const data = await res.json();
+      const appEntries = (data.apps || []).map(a => ({
+        label: a.name,
+        sub: a.summary || '',
+        icon: a.icon || '',
+        href: '/apps/' + encodeURIComponent(a.key),
+        badge: a.curatedOnly ? (a.pricing || '精选收录') : `${a.count} 票`,
+      }));
+      const catEntries = (data.categories || []).map(c => ({
+        label: c.name,
+        sub: '分类浏览',
+        href: '/apps?category=' + encodeURIComponent(c.name),
+        badge: `${c.count} 款`,
+      }));
+      const quickHits = CMDK_QUICK_ACTIONS.filter(x => (x.label + x.sub).toLowerCase().includes(q.toLowerCase())).slice(0, 3);
+      renderCmdkList([
+        { title: '匹配软件（含 200+ AI & Mac 应用）', items: appEntries },
+        { title: '分类', items: catEntries },
+        { title: '站内工具', items: quickHits },
+      ]);
+    } catch {}
+  };
+
+  openCmdk = () => {
+    if (cmdkDialog.open) { cmdkDialog.close(); return; }
+    cmdkInput.value = '';
+    renderCmdkList([{ title: '快捷入口', items: CMDK_QUICK_ACTIONS }]);
+    cmdkDialog.showModal();
+    cmdkInput.focus();
+  };
+
+  cmdkInput.addEventListener('input', () => {
+    clearTimeout(cmdkTimer);
+    cmdkTimer = setTimeout(queryCmdk, 110);
+  });
+  cmdkInput.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown' && cmdkItems.length) {
+      e.preventDefault();
+      setCmdkActive((cmdkIdx + 1) % cmdkItems.length);
+    } else if (e.key === 'ArrowUp' && cmdkItems.length) {
+      e.preventDefault();
+      setCmdkActive((cmdkIdx - 1 + cmdkItems.length) % cmdkItems.length);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (cmdkItems[cmdkIdx]) location.href = cmdkItems[cmdkIdx].href;
+      else if (cmdkInput.value.trim()) location.href = '/apps?q=' + encodeURIComponent(cmdkInput.value.trim());
+    }
+  });
+  headerKbd?.addEventListener('click', (e) => { e.preventDefault(); openCmdk(); });
+}
+
 document.addEventListener('keydown', event => {
-  if (!headerSearch) return;
   const isCmdK = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k';
   const isSlash = event.key === '/' && !event.metaKey && !event.ctrlKey && !event.altKey;
-  if (!isCmdK && !isSlash) return;
+  if (isCmdK && cmdkDialog) {
+    event.preventDefault();
+    if (document.querySelector('dialog[open]:not(#cmdk-dialog)')) return;
+    openCmdk();
+    return;
+  }
+  if (!isSlash || !headerSearch) return;
   const target = event.target;
-  if (isSlash && target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+  if (target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
   if (document.querySelector('dialog[open]')) return;
   event.preventDefault();
   const pageSearch = document.querySelector('main input[type="search"]');
-  const field = (!isCmdK && pageSearch && pageSearch.offsetParent !== null) ? pageSearch : headerSearch;
+  const field = pageSearch && pageSearch.offsetParent !== null ? pageSearch : headerSearch;
   field.focus();
   field.select();
 });
@@ -172,9 +320,7 @@ if (headerSearch) {
         const a = document.createElement('a');
         a.className = 'suggest-item';
         a.role = 'option';
-        a.href = app.studioOnly
-          ? '/studio?add=' + encodeURIComponent(app.key)
-          : '/apps/' + encodeURIComponent(app.key);
+        a.href = '/apps/' + encodeURIComponent(app.key);
         if (app.icon) {
           const img = document.createElement('img');
           img.src = app.icon;
@@ -197,7 +343,7 @@ if (headerSearch) {
         }
         const meta = document.createElement('span');
         meta.className = 'suggest-item-meta num';
-        meta.textContent = app.studioOnly ? '加入海报 →' : `${app.count} 票`;
+        meta.textContent = app.curatedOnly ? (app.pricing || '精选收录') : `${app.count} 票`;
         a.append(wrap, meta);
         menu.append(a);
         items.push(a);
@@ -775,7 +921,19 @@ if (setupRoot) {
   document.getElementById('setup-to-kit')?.addEventListener('click', (e) => {
     for (const a of picked.values()) addToKit(a);
     e.currentTarget.textContent = '已存入装机清单';
+    window.qiaomuToast?.(`已将 ${picked.size} 款软件存入装机清单`);
     setTimeout(() => { e.currentTarget.textContent = '存入装机清单'; }, 1600);
+  });
+  document.getElementById('setup-to-studio')?.addEventListener('click', () => {
+    const carried = [...picked.values()].map(a => ({
+      name: a.name,
+      key: a.key,
+      group: 'AI 与开发',
+      icon: a.icon || '',
+    }));
+    if (!carried.length) { window.qiaomuToast?.('请先勾选至少 1 款软件'); return; }
+    try { sessionStorage.setItem('qiaomu_taste_carry_v1', JSON.stringify(carried)); } catch {}
+    location.href = '/studio';
   });
   renderPackItems();
 }

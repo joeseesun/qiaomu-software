@@ -210,6 +210,19 @@ ${analytics}
   <img width="160" height="160" src="/qiaomu-reward.png" alt="向阳乔木打赏二维码" loading="lazy">
   <form method="dialog"><button type="submit" class="button secondary" autofocus>关闭</button></form>
 </dialog>
+<dialog id="cmdk-dialog" class="cmdk-dialog" closedby="any" aria-label="快捷命令与全站搜索">
+  <div class="cmdk-head">
+    ${glyph('search')}
+    <input type="search" id="cmdk-input" maxlength="60" placeholder="搜任意 Mac 软件、AI Harness 或痛点需求（如 Paseo / Ollama / 截图）…" autocomplete="off" aria-autocomplete="list" aria-controls="cmdk-results">
+    <kbd aria-hidden="true">Esc</kbd>
+  </div>
+  <div class="cmdk-body" id="cmdk-results" role="listbox"></div>
+  <div class="cmdk-foot" aria-hidden="true">
+    <span><kbd>↑</kbd><kbd>↓</kbd> 选择</span>
+    <span><kbd>↵</kbd> 打开</span>
+    <span><kbd>Esc</kbd> 关闭</span>
+  </div>
+</dialog>
 <div id="site-toast" class="site-toast" role="status" aria-live="polite"></div>
 </body>
 </html>`;
@@ -706,13 +719,15 @@ export function appPage({ origin, umamiId, app, categories = [], reasons = [], r
     <div class="app-hero-copy">
       <div class="app-hero-title"><h1>${esc(app.name)}</h1>${app.pricing ? `<span class="pricing-pill${app.pricing === '开源免费' ? ' is-foss' : ''}">${esc(app.pricing)}</span>` : ''}</div>
       ${app.summary ? `<p class="app-summary">${esc(app.summary)}</p>` : ''}
-      <p class="app-hero-count">被 ${num(app.count)} 张公开海报推荐<span class="dot" aria-hidden="true">·</span>最早 ${esc(date.format(app.first))}</p>
-      <ul class="app-cats">${categories.map(c => `<li><a href="${href('/apps', { category: c.name })}">${esc(c.name)}<span class="num">${esc(c.count)}</span></a></li>`).join('')}</ul>
+      <p class="app-hero-count">${app.curatedOnly ? '站内精选收录 · 等待第一张公开海报投票' : `被 ${num(app.count)} 张公开海报推荐<span class="dot" aria-hidden="true">·</span>最早 ${esc(date.format(app.first))}`}</p>
+      <ul class="app-cats">${categories.map(c => `<li><a href="${c.themeId ? href('/apps', { theme: c.themeId }) : href('/apps', { category: c.name })}">${esc(c.name)}${c.count ? `<span class="num">${esc(c.count)}</span>` : ''}</a></li>`).join('')}</ul>
       ${app.bundle && !app.bundle.startsWith('cli:') ? `<p class="bundle"><span class="sr">应用标识：</span><code>${esc(app.bundle)}</code></p>` : ''}
       ${metaStrip}
     </div>
     <div class="actions app-hero-actions">
-      <a class="button primary" href="${href('/posters', { app: app.key })}">看推荐它的海报${glyph('arrow')}</a>
+      ${app.curatedOnly
+        ? `<a class="button primary" href="/studio?add=${encodeURIComponent(app.key)}">${glyph('sparkles')}加入海报 · 投第 1 票</a>`
+        : `<a class="button primary" href="${href('/posters', { app: app.key })}">看推荐它的海报${glyph('arrow')}</a>`}
       ${kitButton(app, { label: true })}
       <a class="button secondary" href="${href('/compare', { a: app.key })}">${glyph('scale')}找同类对比</a>
     </div>
@@ -727,10 +742,10 @@ export function appPage({ origin, umamiId, app, categories = [], reasons = [], r
         <ul class="together">${alternatives.map(a => `<li class="aside-row"><a class="aside-main" href="${appHref(a.key)}">${appIcon(a, 'md')}<span class="together-name">${esc(a.name)}${a.pricing ? ` ${pricingTag(a.pricing)}` : ''}</span><span class="together-count">${num(a.count)}</span></a><a class="compare-mini" href="${href('/compare', { a: app.key, b: a.key })}">对比</a></li>`).join('')}</ul></section>` : ''}
     </aside>
   </div>
-  <section class="app-posters" aria-labelledby="posters-title">
+  ${posters.length ? `<section class="app-posters" aria-labelledby="posters-title">
     <div class="section-head"><div><h2 id="posters-title">出现在这些海报里</h2></div>${posters.length >= 12 ? `<a class="text-link" href="${href('/posters', { app: app.key })}">全部${glyph('arrow')}</a>` : ''}</div>
     <div class="poster-grid">${posters.map(row => posterCard(row)).join('')}</div>
-  </section>
+  </section>` : `<section class="app-posters"><div class="empty-note"><h3>还没有公开海报推荐 ${esc(app.name)}</h3><p>你正在用它吗？点一下把它放进你的 Mac 软件海报，为它投出站内第 1 票。</p><a class="text-link" href="/studio?add=${encodeURIComponent(app.key)}">立刻把它放进我的海报${glyph('arrow')}</a></div></section>`}
   ${faqSection}
   <details class="badge-box">
     <summary>${glyph('code')}给开发者的推荐徽章（可嵌入 GitHub README 或官网）</summary>
@@ -810,6 +825,7 @@ export function setupPage({ origin, umamiId, packs = [], stats }) {
           <button type="button" class="button secondary small" id="setup-download-sh">${glyph('download')}下载 setup-mac.sh</button>
           <button type="button" class="button secondary small" id="setup-download-brewfile">${glyph('download')}下载 Brewfile</button>
           <button type="button" class="button secondary small" id="setup-to-kit">${glyph('box')}存入装机清单</button>
+          <button type="button" class="button secondary small" id="setup-to-studio">${glyph('sparkles')}做成海报</button>
         </div>
       </div>
       <div class="studio-card" id="setup-manual-card" hidden>
@@ -825,6 +841,11 @@ export function setupPage({ origin, umamiId, packs = [], stats }) {
 
 export function comparePage({ origin, umamiId, sideA, sideB, overlap, topChoices = [], stats }) {
   const hotPairs = [
+    ['paseo', 'conductor', 'Paseo vs Conductor'],
+    ['claude code', 'opencode', 'Claude Code vs OpenCode'],
+    ['ollama', 'lm studio', 'Ollama vs LM Studio'],
+    ['wispr flow', 'superwhisper', 'Wispr Flow vs Superwhisper'],
+    ['cursor', 'claude code', 'Cursor vs Claude Code'],
     ['raycast', 'alfred', 'Raycast vs Alfred'],
     ['ghostty', 'warp', 'Ghostty vs Warp'],
     ['cursor', 'visual studio code', 'Cursor vs VS Code'],
@@ -1008,6 +1029,20 @@ export function sharePage({ row, similar = [], origin, umamiId }) {
       <a class="button secondary" id="studio-edit-link" data-share-owner-id="${esc(row.id)}" href="/studio?edit=${esc(row.id)}" hidden>${glyph('edit')}编辑 / 更新海报</a>
     </div>
     <script type="application/json" id="share-manifest">${safeJsonScript(manifest)}</script>
+    ${(() => {
+      const casks = [...new Set(row.items.map(a => a.cask).filter(Boolean))];
+      if (!casks.length) return '';
+      const brewCmd = 'brew install --cask ' + casks.join(' ');
+      return `<div class="share-brew-bar">
+        <div class="command-terminal">
+          <div class="command-terminal-bar">
+            <span>${glyph('terminal')} 一键安装这张海报的 ${casks.length} 款 Homebrew 软件</span>
+            <button type="button" class="button primary small" data-copy="share-brew-cmd">${glyph('copy')}复制安装命令</button>
+          </div>
+          <pre><code id="share-brew-cmd">${esc(brewCmd)}</code></pre>
+        </div>
+      </div>`;
+    })()}
     <section class="app-list" aria-labelledby="list-title">
       <h2 id="list-title">推荐清单</h2>
       ${[...groups].map(([label, apps]) => `<div class="app-group"><h3><a href="${href('/apps', { category: label })}">${esc(label)}</a></h3>
@@ -1172,6 +1207,7 @@ export function studioPage({ origin, umamiId, catalogApps = [], wallpapers = [],
       <button type="button" class="filter-pill" data-studio-theme="__selected">只看已选</button>
       ${themes.map(t => `<button type="button" class="filter-pill" data-studio-theme="${esc(t.id)}">${esc(t.name)} (${t.count})</button>`).join('')}
     </div>
+    <div class="studio-selected-strip" id="studio-selected-strip" hidden aria-label="已选软件快捷管理"></div>
     <ul class="studio-catalog-grid" id="studio-catalog-grid">
       ${compactCatalog.map(app => `<li><button type="button" class="studio-pick-card" data-catalog-key="${esc(app.key)}" data-catalog-themes="${esc(app.themes.join(','))}" aria-pressed="false">
         <span class="pick-check" aria-hidden="true">✓</span>

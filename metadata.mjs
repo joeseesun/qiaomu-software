@@ -102,8 +102,14 @@ export const SETUP_PACKS = [
     apps: ['raycast', 'shottr', 'rectangle', 'ice', 'maccy', 'iina', 'keka', 'appcleaner', 'input source pro', 'stats'],
   },
   {
+    id: 'ai-harness',
+    name: '2026 AI Harness 工作站',
+    desc: '多 Agent 编排、AI 编程终端、本地离线大模型与 AI 语音输入一站配齐，打造前沿 AI 工作台。',
+    apps: ['claude code', 'codex', 'paseo', 'opencode', 'openclaw', 'conductor', 'cursor', 'antigravity', 'ollama', 'lm studio', 'cherry studio', 'wispr flow', 'ghostty', 'orbstack'],
+  },
+  {
     id: 'dev-ai',
-    name: 'AI & 独立开发全家桶',
+    name: '全栈 & 独立开发全家桶',
     desc: 'AI 编程编辑器、现代 GPU 终端、轻量 Docker、抓包与内网穿透一次配齐。',
     apps: ['cursor', 'visual studio code', 'ghostty', 'orbstack', 'raycast', 'claude', 'ollama', 'bruno', 'tableplus', 'tailscale'],
   },
@@ -117,7 +123,7 @@ export const SETUP_PACKS = [
     id: 'foss',
     name: '0 元纯开源免费全家桶',
     desc: '全部开源免费，零订阅压力，一样把 macOS 打造成极客效率主机。',
-    apps: ['visual studio code', 'zed', 'ghostty', 'rectangle', 'ice', 'maccy', 'stats', 'iina', 'keka', 'pearcleaner', 'bitwarden', 'bruno', 'netnewswire', 'easydict', 'logseq'],
+    apps: ['visual studio code', 'zed', 'ghostty', 'opencode', 'ollama', 'cherry studio', 'rectangle', 'ice', 'maccy', 'stats', 'iina', 'keka', 'pearcleaner', 'bitwarden', 'bruno', 'netnewswire', 'easydict', 'logseq'],
   },
 ];
 
@@ -143,9 +149,24 @@ export const FREE_ALTERNATIVES = {
   'bear': ['obsidian', 'logseq'],
   'ulysses': ['obsidian', 'logseq'],
   'ia writer': ['obsidian', 'logseq'],
+  'notion': ['obsidian', 'logseq'],
   'infuse': ['iina', 'vlc'],
   'transmit': ['cyberduck'],
   'downie': ['yt-dlp'],
+  // AI & Harness Era Free / Open-Source Alternatives
+  'cursor': ['opencode', 'cline', 'zed'],
+  'windsurf': ['opencode', 'cline', 'zed'],
+  'claude code': ['opencode', 'aider', 'goose', 'gemini cli'],
+  'codex': ['opencode', 'aider', 'qwen code'],
+  'conductor': ['paseo', 'emdash', 'vibe kanban'],
+  'paradev': ['paseo', 'emdash', 'vibe kanban'],
+  'devin': ['openhands', 'paseo', 'goose'],
+  'chatgpt': ['ollama', 'cherry studio', 'jan'],
+  'claude': ['cherry studio', 'lobechat', 'jan'],
+  'wispr flow': ['superwhisper', 'macwhisper'],
+  'midjourney': ['comfyui', 'draw things', 'diffusionbee'],
+  'perplexity': ['秘塔 ai 搜索'],
+  'linear': ['vibe kanban'],
 };
 
 // Each entry: { name, aliases?, bundles?, homepage?, cask?, masUrl?, pricing?, summary?, themes?, keywords?, system? }

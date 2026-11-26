@@ -754,6 +754,56 @@ export function createSoftwareServer({
   const ogCache = createOgCache(64);
   let processing = 0;
 
+  function loadIconBytes(hash) {
+    if (!hash) return null;
+    const row = getIcon.get(hash);
+    if (row?.data) return row.data;
+    try { return readFileSync(join(presetIconsDir, hash + '.webp')); }
+    catch { return null; }
+  }
+
+  function getAppOrBuiltin(key) {
+    const live = getApp.get(key);
+    if (live) {
+      return { ...live, icon: live.icon || presetIconsMap[key] || null, curatedOnly: false };
+    }
+    const b = BUILTIN_BY_KEY.get(key);
+    if (!b || b.system) return null;
+    return {
+      key,
+      name: b.name,
+      count: 0,
+      first: now(),
+      latest: now(),
+      icon: presetIconsMap[key] || null,
+      bundle: b.bundles?.[0] ?? null,
+      curatedOnly: true,
+    };
+  }
+
+  function buildThemePeers(key, meta) {
+    const themes = String(meta?.themes ?? '').split(',').filter(Boolean);
+    if (!themes.length) return [];
+    const primary = themes[0];
+    const peers = [];
+    const seen = new Set([key]);
+    for (const a of apps({ theme: primary, hideSystem: true, limit: 8 })) {
+      if (seen.has(a.key)) continue;
+      seen.add(a.key);
+      peers.push({ key: a.key, name: a.name, count: a.count, icon: a.icon || presetIconsMap[a.key] || null, pricing: a.pricing || '' });
+      if (peers.length >= 6) return peers;
+    }
+    for (const b of BUILTIN_APPS) {
+      if (b.system) continue;
+      const k = normalizeAppKey(b.name);
+      if (seen.has(k) || !(b.themes ?? []).includes(primary)) continue;
+      seen.add(k);
+      peers.push({ key: k, name: b.name, count: 0, icon: presetIconsMap[k] || null, pricing: b.pricing || '' });
+      if (peers.length >= 6) break;
+    }
+    return peers;
+  }
+
   function buildFreeAlternatives(key, meta) {
     const direct = FREE_ALTERNATIVES[key] ?? [];
     const results = [];
@@ -769,8 +819,8 @@ export function createSoftwareServer({
         key: altKey,
         name: live?.name ?? altMeta?.name ?? altKey,
         count: live?.count ?? 0,
-        icon: live?.icon ?? null,
-        inCatalog: Boolean(live),
+        icon: live?.icon || presetIconsMap[altKey] || null,
+        inCatalog: Boolean(live || (altMeta && !altMeta.system)),
         pricing: altMeta?.pricing ?? '免费',
         cask: altMeta?.cask ?? '',
         homepage: altMeta?.homepage ?? '',
@@ -816,7 +866,7 @@ export function createSoftwareServer({
         name: live?.name ?? meta?.name ?? k,
         count: live?.count ?? 0,
         icon: live?.icon || presetIconsMap[k] || null,
-        inCatalog: Boolean(live),
+        inCatalog: Boolean(live || (meta && !meta.system)),
         cask: meta?.cask ?? '',
         homepage: meta?.homepage ?? '',
         masUrl: meta?.mas_url ?? meta?.masUrl ?? '',
@@ -1279,23 +1329,29 @@ export function createSoftwareServer({
       if (Array.from(key).length > 60) throw new RequestError(404, '没有找到这个软件。');
       const alias = getAlias.get(key);
       if (alias && alias.canonical_key !== key) {
-        const target = getApp.get(alias.canonical_key);
+        const target = getAppOrBuiltin(alias.canonical_key);
         if (target) {
           return send(res, 301, 'text/plain; charset=utf-8', '', { location: '/apps/' + encodeURIComponent(alias.canonical_key) });
         }
       }
-      const app = getApp.get(key);
+      const app = getAppOrBuiltin(key);
       if (!app) throw new RequestError(404, '还没有公开海报推荐这个软件。');
       const meta = getMeta.get(key) ?? { homepage: '', cask: '', mas_url: '', pricing: '', summary: '', themes: '', keywords: '', is_system: 0 };
       const freeAlternatives = buildFreeAlternatives(key, meta);
+      const liveCategories = getAppCategories.all(key);
+      const fallbackCategories = liveCategories.length
+        ? liveCategories
+        : String(meta.themes ?? '').split(',').filter(Boolean).map(id => THEME_BY_ID.get(id)).filter(Boolean).map(t => ({ name: t.name, count: 0, themeId: t.id }));
+      const liveAlts = getAlternatives.all(key, key);
+      const alternatives = liveAlts.length ? liveAlts : buildThemePeers(key, meta);
       return page(appPage({
         ...context,
         app: { ...app, ...meta },
-        categories: getAppCategories.all(key),
+        categories: fallbackCategories,
         reasons: getReasons.all(key),
         reviews: getReviews.all(key),
         together: getTogether.all(key),
-        alternatives: getAlternatives.all(key, key),
+        alternatives,
         freeAlternatives,
         posters: withIcons(gallery({ app: key, limit: 12 })),
       }));
@@ -1308,13 +1364,17 @@ export function createSoftwareServer({
       const keyB = rawB ? resolveCanonicalKey(rawB) : '';
       const loadSide = (k) => {
         if (!k) return null;
-        const app = getApp.get(k);
+        const app = getAppOrBuiltin(k);
         if (!app) return null;
-        const meta = getMeta.get(k) ?? { homepage: '', cask: '', mas_url: '', pricing: '', summary: '' };
+        const meta = getMeta.get(k) ?? { homepage: '', cask: '', mas_url: '', pricing: '', summary: '', themes: '' };
+        const liveCats = getAppCategories.all(k);
+        const cats = liveCats.length
+          ? liveCats
+          : String(meta.themes ?? '').split(',').filter(Boolean).map(id => THEME_BY_ID.get(id)).filter(Boolean).map(t => ({ name: t.name, count: 0 }));
         return {
           ...app,
           ...meta,
-          categories: getAppCategories.all(k),
+          categories: cats,
           reasons: getReasons.all(k).slice(0, 5),
           reviews: getReviews.all(k).slice(0, 5),
         };
@@ -1324,8 +1384,13 @@ export function createSoftwareServer({
       const overlap = sideA && sideB && sideA.key !== sideB.key
         ? getPairOverlap.get(sideA.key, sideB.key, sideA.key, sideB.key)
         : null;
-      const topChoices = apps({ sort: 'top', hideSystem: true, limit: 40 });
-      return page(comparePage({ ...context, sideA, sideB, overlap, topChoices, stats: getStats.get() }));
+      const liveTopChoices = apps({ sort: 'top', hideSystem: true, limit: 40 });
+      const seenChoices = new Set(liveTopChoices.map(a => a.key));
+      const curatedChoices = BUILTIN_APPS
+        .filter(b => !b.system && !seenChoices.has(normalizeAppKey(b.name)))
+        .slice(0, 120)
+        .map(b => ({ key: normalizeAppKey(b.name), name: b.name }));
+      return page(comparePage({ ...context, sideA, sideB, overlap, topChoices: [...liveTopChoices, ...curatedChoices], stats: getStats.get() }));
     }
 
     if (read && pathname === '/setup') {
@@ -1337,14 +1402,14 @@ export function createSoftwareServer({
       let key;
       try { key = appKey(decodeURIComponent(ogAppRoute[1])); } catch { throw new RequestError(404, '没有找到这个软件。'); }
       const resolvedKey = resolveCanonicalKey(key);
-      const app = getApp.get(resolvedKey);
+      const app = getAppOrBuiltin(resolvedKey);
       if (!app) throw new RequestError(404, '没有找到这个软件。');
       const categories = getAppCategories.all(resolvedKey);
-      const topReason = getReasons.all(resolvedKey)[0]?.note ?? getReviews.all(resolvedKey)[0]?.note ?? '';
+      const topReason = getReasons.all(resolvedKey)[0]?.note ?? getReviews.all(resolvedKey)[0]?.note ?? (getMeta.get(resolvedKey)?.summary || '');
       const cacheKey = `${resolvedKey}:${app.count}:${app.icon ?? ''}:${topReason}`;
       let png = ogCache.get(cacheKey);
       if (!png) {
-        const iconBuffer = app.icon ? getIcon.get(app.icon)?.data ?? null : null;
+        const iconBuffer = loadIconBytes(app.icon);
         png = await renderAppOg({ app, categories, reason: topReason, iconBuffer });
         ogCache.set(cacheKey, png);
       }
@@ -1359,7 +1424,7 @@ export function createSoftwareServer({
       let key;
       try { key = appKey(decodeURIComponent(badgeRoute[1])); } catch { throw new RequestError(404, '没有找到这个软件。'); }
       const resolvedKey = resolveCanonicalKey(key);
-      const app = getApp.get(resolvedKey);
+      const app = getAppOrBuiltin(resolvedKey);
       if (!app) throw new RequestError(404, '没有找到这个软件。');
       const svg = renderAppBadge({ app });
       return send(res, 200, 'image/svg+xml; charset=utf-8', method === 'HEAD' ? '' : svg, {
@@ -1609,11 +1674,27 @@ export function createSoftwareServer({
         { path: '/apps?pricing=foss', freq: 'daily', prio: '0.8' },
         ...STANDARD_THEMES.map(t => ({ path: `/apps?theme=${encodeURIComponent(t.id)}`, freq: 'daily', prio: '0.8' })),
         ...[
+          ['Paseo', 'Conductor'], ['Claude Code', 'OpenCode'], ['Ollama', 'LM Studio'], ['Wispr Flow', 'Superwhisper'],
           ['Raycast', 'Alfred'], ['Ghostty', 'Warp'], ['Cursor', 'Visual Studio Code'],
           ['Cursor', 'Claude Code'], ['CleanShot X', 'Shottr'], ['Obsidian', 'Notion'],
           ['OrbStack', 'Docker Desktop'], ['Bartender', 'Ice'], ['Bob', 'Easydict'],
         ].map(([a, b]) => ({ path: `/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`, freq: 'weekly', prio: '0.7' })),
-        ...getSitemapApps.all().map(row => ({ path: '/apps/' + encodeURIComponent(row.key), freq: 'weekly', prio: '0.7' })),
+        ...(() => {
+          const seen = new Set();
+          const out = [];
+          for (const row of getSitemapApps.all()) {
+            seen.add(row.key);
+            out.push({ path: '/apps/' + encodeURIComponent(row.key), freq: 'weekly', prio: '0.7' });
+          }
+          for (const b of BUILTIN_APPS) {
+            if (b.system) continue;
+            const k = normalizeAppKey(b.name);
+            if (seen.has(k)) continue;
+            seen.add(k);
+            out.push({ path: '/apps/' + encodeURIComponent(k), freq: 'monthly', prio: '0.6' });
+          }
+          return out;
+        })(),
         ...getSitemap.all().map(row => ({ path: '/s/' + row.id, freq: 'monthly', prio: '0.6' })),
       ];
       return send(res, 200, 'application/xml; charset=utf-8',
@@ -1681,7 +1762,7 @@ export function createSoftwareServer({
             key: k,
             name: b.name,
             count: 0,
-            studioOnly: true,
+            curatedOnly: true,
             icon: iconHash ? '/icons/' + iconHash + '.webp' : null,
             iconHash,
             category: '',
@@ -1729,7 +1810,7 @@ export function createSoftwareServer({
       limit(req, 'review', 12);
       let key;
       try { key = resolveCanonicalKey(decodeURIComponent(apiAppReviewRoute[1])); } catch { throw new RequestError(404, '没有找到这个软件。'); }
-      if (!getApp.get(key)) throw new RequestError(404, '还没有公开海报推荐这个软件。');
+      if (!getAppOrBuiltin(key)) throw new RequestError(404, '还没有公开海报推荐这个软件。');
       const body = await readJson(req, 1500);
       const note = clean(body?.note, 60, '体验内容');
       if (Array.from(note).length < 4) throw new RequestError(400, '请至少写 4 个字，让别人更看懂你的经验。');
@@ -1775,7 +1856,7 @@ export function createSoftwareServer({
     if (read && apiAppRoute) {
       let key;
       try { key = resolveCanonicalKey(decodeURIComponent(apiAppRoute[1])); } catch { throw new RequestError(404, '没有找到这个软件。'); }
-      const app = getApp.get(key);
+      const app = getAppOrBuiltin(key);
       if (!app) throw new RequestError(404, '没有找到这个软件。');
       const meta = getMeta.get(key) ?? { homepage: '', cask: '', mas_url: '', pricing: '', summary: '', themes: '' };
       return publicJson(res, 200, {
