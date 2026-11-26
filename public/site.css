@@ -850,6 +850,12 @@ dialog .button { margin-top: 12px; min-width: 96px; }
 .role-insight-box li .num { margin-left: auto; color: var(--text-2); font-size: .78rem; }
 .share-embed-box { margin-top: 24px; }
 
+@media (max-width: 1000px) {
+  .insights-grid, .alt-pair-card { grid-template-columns: minmax(0, 1fr); }
+  .insights-kpis, .role-insights-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .alt-arrow-col { flex-direction: row; justify-content: flex-start; padding-inline: 0; }
+}
+
 /* GEO FAQ section on /apps/:key */
 .app-faq { margin-top: 40px; padding: 24px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--card-shadow); }
 .app-faq h2 { font-size: 1.2rem; margin-bottom: 14px; }
