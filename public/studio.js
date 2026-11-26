@@ -265,7 +265,7 @@
 
   let renderSeq = 0;
 
-  async function renderPoster() {
+  async function renderPoster(waitForFont = false) {
     const seq = ++renderSeq;
     const isPortrait = activeAspect === 'portrait';
     root.classList.toggle('is-portrait', isPortrait);
@@ -274,11 +274,21 @@
     if (titleInput) titleInput.placeholder = defaultTitleFor(nameInput?.value);
     const sampleText = rawTitle + rows.map(r => r.label).join('');
 
-    await Promise.all([
-      ensureFontLoaded(activeFont, sampleText),
+    let fontReady = false;
+    const fontPromise = ensureFontLoaded(activeFont, sampleText).then(() => { fontReady = true; });
+    const mediaTasks = [
       (!bgImage && activeWallpaperUrl) ? loadImage(activeWallpaperUrl, wallpaperCache).then(img => { bgImage = img; }) : Promise.resolve(),
       ...selectedApps.map(a => loadIconImage(a.icon)),
-    ]);
+    ];
+    if (waitForFont) {
+      await Promise.all([fontPromise, ...mediaTasks]);
+    } else {
+      await Promise.all([
+        Promise.race([fontPromise, new Promise(r => setTimeout(r, 350))]),
+        ...mediaTasks,
+      ]);
+      if (!fontReady) fontPromise.then(() => { if (seq === renderSeq) renderPoster(true); });
+    }
     if (seq !== renderSeq) return;
 
     const W = isPortrait ? 1200 : 1600;
@@ -797,7 +807,7 @@
 
   copyImgBtn?.addEventListener('click', async () => {
     if (!selectedApps.length) { appsModal?.showModal(); return; }
-    await renderPoster();
+    await renderPoster(true);
     try {
       if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') throw Error('unsupported');
       const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
@@ -811,7 +821,7 @@
 
   downloadBtn?.addEventListener('click', async () => {
     if (!selectedApps.length) { appsModal?.showModal(); return; }
-    await renderPoster();
+    await renderPoster(true);
     const url = canvas.toDataURL('image/png');
     const a = document.createElement('a');
     a.href = url;
@@ -830,7 +840,7 @@
     publishBtn.disabled = true;
     statusEl.textContent = editing ? '正在更新海报…' : '正在生成高清海报并发布…';
     try {
-      await renderPoster();
+      await renderPoster(true);
       const base64 = canvas.toDataURL('image/png').split(',')[1];
       const payload = {
         name,
